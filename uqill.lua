@@ -255,12 +255,14 @@ local Waypoints = {
     ["Sisyphus Statue"]     = Vector3.new(-3657, -134, -963),
     ["Treasure Room"]       = Vector3.new(-3604, -284, -1632),
     ["Ancient Jungle"]      = Vector3.new(1463, 8, -358),
-    ["Ancient Ruin"]        = Vector3.new(6021, -586, 4633),
+    ["Ancient Ruin"]        = Vector3.new(6067, -586, 4714),
     ["Sacred Temple"]       = Vector3.new(1476, -22, -632),
     ["Classic Island"]      = Vector3.new(1433, 44, 2755),
     ["Iron Cavern"]         = Vector3.new(-8798, -585, 241),
     ["Iron Cafe"]           = Vector3.new(-8647, -548, 160),
-    ["Crater Island"]           = Vector3.new(1070, 2, 5102)
+    ["Crater Island"]       = Vector3.new(1070, 2, 5102),
+    ["Cristmas Island"]     = Vector3.new(1175, 24, 1558),
+    ["Underground Cellar"]     = Vector3.new(2135, -91, -700),
 }
 
 local function TeleportTo(targetPos)
@@ -274,8 +276,6 @@ end
 ---------------------------------------------------------
 -- AUTO WEATHER — ULTRA LIGHT (FINAL PATCH)
 ---------------------------------------------------------
----
----
 
 task.defer(function()
     print("====== WEATHER SNIFFER ARMED v3 (SAFE) ======")
@@ -398,84 +398,6 @@ function StopAutoWeather()
 	warn("[AUTO WEATHER] Disabled")
 end
 
-
--- -- [[ UPDATED: AUTO EVENT LOGIC (V3.4 - ROTATION CHECK) ]]
--- local function IsDiscoEventActive()
---     local ClassicEvent = Workspace:FindFirstChild("ClassicEvent")
---     if not ClassicEvent then return false end 
-
---     local DiscoEvent = ClassicEvent:FindFirstChild("DiscoEvent")
---     if not DiscoEvent then return false end
-
---     local BallModel = DiscoEvent:FindFirstChild("DiscoBall")
---     if not BallModel then return false end
-
---     local BallPart = BallModel:FindFirstChild("DiscoBall")
---     if not BallPart then return false end
-
---     local rot1 = BallPart.Orientation
---     task.wait(0.1)
---     local rot2 = BallPart.Orientation
-
---     if (rot1 - rot2).Magnitude > 0.1 then
---         return true
---     end
-
---     return false
--- end
-
--- local function StartAutoEventMonitor()
---     task.spawn(function()
---         print("🎉 Event Monitor v3.4: STARTED (Rotation Mode)")
---         local isInEvent = false
---         local savedPosition = nil
-        
---         while SettingsState.AutoEvent.Active do
---             pcall(function()
---                 local eventActive = IsDiscoEventActive()
---                 local char = LocalPlayer.Character
-                
---                 if eventActive then
---                     if not isInEvent then
---                         if char and char:FindFirstChild("HumanoidRootPart") then
---                             savedPosition = char.HumanoidRootPart.Position
---                             print("📍 Position Saved: " .. tostring(savedPosition))
---                             TeleportTo(Vector3.new(-8629, -549, 163))
---                             isInEvent = true
-                            
---                             local StarterGui = game:GetService("StarterGui")
---                             StarterGui:SetCore("SendNotification", {
---                                 Title = "🎉 EVENT STARTED!";
---                                 Text = "Bola Disko Berputar! OTW...";
---                                 Duration = 5;
---                             })
---                         end
---                     end
---                 else
---                     if isInEvent then
---                         print("🏁 Event Finished. Returning...")
---                         if savedPosition then
---                             TeleportTo(savedPosition)
---                         else
---                             TeleportTo(Waypoints["Traveling Merchant"])
---                         end
---                         isInEvent = false
---                         savedPosition = nil
-                        
---                         local StarterGui = game:GetService("StarterGui")
---                         StarterGui:SetCore("SendNotification", {
---                             Title = "🏁 EVENT ENDED";
---                             Text = "Bola berhenti. Pulang...";
---                             Duration = 5;
---                         })
---                     end
---                 end
---             end)
---             task.wait(1.5) 
---         end
---     end)
--- end
-
 -- =====================================================
 -- 💰 BAGIAN 4: AUTO SELL
 -- =====================================================
@@ -498,6 +420,7 @@ end
 -- 🎣 BAGIAN 5: LOGIKA FISHING (TURBO)
 -- =====================================================
 local function startFishingLoop()
+    local _Cancel = CancelInput
     print("🎣 Standard Loop")
     while getgenv().fishingStart do
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/ChargeFishingRod"):InvokeServer()
@@ -511,8 +434,9 @@ local function startFishingLoop()
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingCompleted"):FireServer()
         
         -- task.wait(1)
-        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingStopped"):FireServer()
+        -- game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingStopped"):FireServer()
         task.wait(0.05)
+        pcall(function() _Cancel:InvokeServer() end)
     end
 end
 
@@ -535,6 +459,14 @@ local function startFishingSuperInstantLoop()
         task.wait(0.055)
     end
     print("🛑 TURBO Loop Stopped")
+end
+
+local function resetCharacter()
+    local _Complete = CompleteGame
+    local _Cancel = CancelInput
+    pcall(function() _Complete:FireServer() end)
+    task.wait(0.05) 
+    pcall(function() _Cancel:InvokeServer() end)
 end
 
 -- =====================================================
@@ -898,6 +830,89 @@ for name, _ in pairs(Waypoints) do table.insert(zoneNames, name) end
 table.sort(zoneNames)
 
 -- =====================================================
+-- 🎭 NAME SPOOFER (OVERHEAD HEADER BASED)
+-- =====================================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local NameSpoof = {
+	Active = false,
+	FakeName = "",
+	OriginalText = nil,
+	Label = nil,
+	CharConn = nil
+}
+
+local function GetNameLabel()
+	local char = LocalPlayer.Character
+	if not char then return nil end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+
+	local overhead = hrp:FindFirstChild("Overhead")
+	if not overhead then return nil end
+
+	local content = overhead:FindFirstChild("Content")
+	if not content then return nil end
+
+	local header = content:FindFirstChild("Header")
+	if header and header:IsA("TextLabel") then
+		return header
+	end
+
+	return nil
+end
+
+local function ApplyNameSpoof()
+	if not NameSpoof.Active or NameSpoof.FakeName == "" then return end
+
+	local label = GetNameLabel()
+	if not label then return end
+
+	if not NameSpoof.OriginalText then
+		NameSpoof.OriginalText = label.Text
+	end
+
+	NameSpoof.Label = label
+	label.Text = NameSpoof.FakeName
+end
+
+local function RestoreName()
+	if NameSpoof.Label and NameSpoof.OriginalText then
+		NameSpoof.Label.Text = NameSpoof.OriginalText
+	end
+
+	NameSpoof.OriginalText = nil
+	NameSpoof.Label = nil
+end
+
+
+local function EnableNameSpoof()
+	if NameSpoof.Active or NameSpoof.FakeName == "" then return end
+	NameSpoof.Active = true
+
+	ApplyNameSpoof()
+
+	NameSpoof.CharConn = LocalPlayer.CharacterAdded:Connect(function()
+		task.wait(0.3)
+		ApplyNameSpoof()
+	end)
+end
+
+local function DisableNameSpoof()
+	if not NameSpoof.Active then return end
+	NameSpoof.Active = false
+
+	if NameSpoof.CharConn then
+		NameSpoof.CharConn:Disconnect()
+		NameSpoof.CharConn = nil
+	end
+
+	RestoreName()
+end
+
+-- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
 -- =====================================================
 local function setElementVisible(name, visible)
@@ -926,9 +941,9 @@ local function setElementVisible(name, visible)
 end
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "door-open", Author = "by UQi", Transparent = true })
+local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.3.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.0.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 
 local TabPlayer = Window:Tab({ Title = "Player Setting", Icon = "user" })
@@ -940,6 +955,32 @@ local TabTeleport = Window:Tab({ Title = "Teleport", Icon = "map-pin" })
 local TabSettings = Window:Tab({ Title = "Settings", Icon = "settings" })
 
 -- [[ TAB PLAYER: UTILITIES ]]
+TabPlayer:Section({ Title = "Hide Name" })
+TabPlayer:Input({
+	Title = "Fake Player Name",
+	Desc = "Visual only (level safe)",
+	Placeholder = "Input fake name",
+	Callback = function(text)
+		NameSpoof.FakeName = tostring(text):gsub("^%s+", ""):gsub("%s+$", "")
+	end
+})
+
+TabPlayer:Toggle({
+	Title = "Spoof Player Name",
+	Desc = "Only name, level untouched",
+	Icon = "user-check",
+	Value = false,
+	Callback = function(state)
+		if state then
+			EnableNameSpoof()
+			WindUI:Notify({ Title = "Name Spoof", Content = "Enabled", Duration = 2 })
+		else
+			DisableNameSpoof()
+			WindUI:Notify({ Title = "Name Spoof", Content = "Restored", Duration = 2 })
+		end
+	end
+})
+
 TabPlayer:Section({ Title = "Players Feature" })
 TabPlayer:Toggle({ Title = "Walk on Water", Desc = "Creates a platform below you", Icon = "waves", Value = false, Callback = function(state) ToggleWaterWalk(state); WindUI:Notify({Title = "Movement", Content = state and "Water Walk ON" or "Water Walk OFF", Duration = 2}) end })
 TabPlayer:Toggle({ Title = "Disable Animation", Desc = "Stop character anims (T-Pose)", Icon = "user-x", Value = false, Callback = function(state) ToggleAnims(state); WindUI:Notify({Title = "Player", Content = state and "Animations Disabled" or "Animations Enabled", Duration = 2}) end })
@@ -949,15 +990,114 @@ TabPlayer:Toggle({ Title = "Equip Diving Gear", Desc = "Toggle Oxygen Tank (105)
 TabPlayer:Toggle({ Title = "Equip Radar", Desc = "Toggle Fishing Radar", Icon = "radar", Value = false, Callback = function(state) pcall(function() UpdateRadar:InvokeServer(state) end); WindUI:Notify({Title = "Item", Content = state and "Radar ON" or "Radar OFF", Duration = 2}) end })
 
 -- [[ TAB 1: FISHING ]]
+
+
 TabFishing:Dropdown({ Title = "Category Fishing", Desc = "Select Mode", Values = {"Instant", "Blatan"}, Value = "Instant", Callback = function(option) instant, superInstant = (option == "Instant"), (option == "Blatan"); setElementVisible("Delay Fishing", false); setElementVisible("Delay Catch", false); setElementVisible("Reset Delay", false); if instant then setElementVisible("Delay Catch", true) elseif superInstant then setElementVisible("Delay Fishing", true); setElementVisible("Reset Delay", true) end end })
-TabFishing:Slider({ Title = "Delay Fishing", Desc = "Wait Fish (Blatan)", Step = 0.01, Value = { Min = 0, Max = 3, Default = 1.15 }, Callback = function(value) delayCharge = value end })
-TabFishing:Slider({ Title = "Reset Delay", Desc = "After Catch (Blatan)", Step = 0.01, Value = { Min = 0, Max = 1, Default = 0.2 }, Callback = function(value) delayReset = value end })
-TabFishing:Slider({ Title = "Delay Catch", Desc = "Instant Speed", Step = 0.01, Value = { Min = 0.1, Max = 3, Default = 0.56 }, Callback = function(value) delayTime = value end })
+TabFishing:Input({
+    Title = "Delay Fishing",
+    Desc = "Wait Fish (Blatan)",
+    Value = "1.30",
+    Callback = function(text)
+        if not text:match("^%d*%.?%d+$") then
+            delayCharge = 1.30
+            return "1.30"
+        end
+
+        local num = tonumber(text)
+        if not num then
+            delayCharge = 1.30
+            return "1.30"
+        end
+
+        delayCharge = math.clamp(num, 0, 3)
+        return tostring(delayCharge)
+    end
+})
+
+TabFishing:Input({
+    Title = "Reset Delay",
+    Desc = "After Catch (Blatan)",
+    Value = "0.20",
+    Callback = function(text)
+        if not text:match("^%d*%.?%d+$") then
+            delayReset = 0.2
+            return "0.2"
+        end
+
+        local num = tonumber(text)
+        if not num then
+            delayReset = 0.2
+            return "0.2"
+        end
+
+        delayReset = math.clamp(num, 0, 1)
+        return tostring(delayReset)
+    end
+})
+
+TabFishing:Input({
+    Title = "Delay Catch",
+    Desc = "Instant Speed",
+    Value = "1.05",
+    Callback = function(text)
+        if not text:match("^%d*%.?%d+$") then
+            delayTime = 1.05
+            return "1.05"
+        end
+
+        local num = tonumber(text)
+        if not num then
+            delayTime = 1.05
+            return "1.05"
+        end
+
+        delayTime = math.clamp(num, 0.1, 3)
+        return tostring(delayTime)
+    end
+})
+
 TabFishing:Toggle({ Title = "Activate Fishing", Desc = "Start/Stop Loop", Icon = "check", Value = false, Callback = function(state) getgenv().fishingStart = state; if state then pcall(function() CancelInput:InvokeServer() end); if superInstant then task.spawn(startFishingSuperInstantLoop) else task.spawn(startFishingLoop) end; WindUI:Notify({Title = "Fishing", Content = "Started!", Duration = 2}) else pcall(function() CompleteGame:FireServer() end); pcall(function() CancelInput:InvokeServer() end); WindUI:Notify({Title = "Fishing", Content = "Stopped", Duration = 2}) end end })
+TabFishing:Button({
+    Title = "Unstuck",
+    Desc = "Unstuck while using blatant",
+    Icon = "person-standing",
+    Callback = function()
+        task.spawn(function()
+            resetCharacter()
+            WindUI:Notify({
+                Title = "Unstuck",
+                Content = "Already unstuck",
+                Duration = 2
+            })
+        end)
+    end
+})
+
 
 -- [[ TAB 2: AUTO SELL ]]
 TabSell:Toggle({ Title = "Auto Sell (Time)", Desc = "Safe Pauses Fishing to Sell", Icon = "timer", Value = false, Callback = function(state) SettingsState.AutoSell.TimeActive = state; if state then StartAutoSellLoop(); WindUI:Notify({Title = "Auto Sell", Content = "Loop Started", Duration = 2}) else SettingsState.AutoSell.IsSelling = false; WindUI:Notify({Title = "Auto Sell", Content = "Loop Stopped", Duration = 2}) end end })
-TabSell:Slider({ Title = "Sell Interval (Seconds)", Desc = "Time between sells", Step = 1, Value = { Min = 10, Max = 300, Default = 60 }, Callback = function(value) SettingsState.AutoSell.TimeInterval = value end })
+TabSell:Input({
+    Title = "Sell Interval (Seconds)",
+    Desc = "Time between sells",
+    Value = "60",
+    Callback = function(text)
+        -- hanya angka bulat
+        if not text:match("^%d+$") then
+            SettingsState.AutoSell.TimeInterval = 60
+            return "60"
+        end
+
+        local num = tonumber(text)
+        if not num then
+            SettingsState.AutoSell.TimeInterval = 60
+            return "60"
+        end
+
+        num = math.clamp(math.floor(num), 10, 300)
+        SettingsState.AutoSell.TimeInterval = num
+        return tostring(num)
+    end
+})
 TabSell:Button({ Title = "Sell Now", Desc = "Sell All Items Immediately", Icon = "trash-2", Callback = function() task.spawn(function() SettingsState.AutoSell.IsSelling = true; task.wait(0.2); pcall(function() SellAll:InvokeServer() end); WindUI:Notify({Title = "Sell All", Content = "Sold!", Duration = 2}); task.wait(0.5); SettingsState.AutoSell.IsSelling = false end) end })
 
 -- [[ TAB 3: WEATHER ]]
