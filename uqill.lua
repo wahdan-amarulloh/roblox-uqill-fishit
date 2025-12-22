@@ -106,139 +106,330 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local RunService = game:GetService("RunService")
 
+-- ---------------------------------------------------------------------
+-- -- AUTO DISCO v13 — FINAL PRODUCTION VERSION
+-- -- Clean, Efisien, Stabil, dan Terintegrasi dengan Event Asli (Replion)
+-- ---------------------------------------------------------------------
+
+-- local Players = game:GetService("Players")
+-- local RS = game:GetService("ReplicatedStorage")
+-- local Replion = require(RS.Packages.Replion)
+
+-- local LP = Players.LocalPlayer
+
+-- ---------------------------------------------------------------------
+-- -- KONFIGURASI TELEPORT
+-- ---------------------------------------------------------------------
+-- local DISCO_POSITION     = Vector3.new(-8628, -548, 161)
+-- local HEIGHT_OFFSET      = Vector3.new(0, 2, 0)
+
+-- ---------------------------------------------------------------------
+-- -- INTERNAL STATE
+-- ---------------------------------------------------------------------
+-- local eventActive        = false
+-- local savedPosition      = nil
+-- local listener           = nil
+
+-- ---------------------------------------------------------------------
+-- -- UTILITY: Ambil HRP
+-- ---------------------------------------------------------------------
+-- local function HRP()
+--     local char = LP.Character
+--     if not char then return nil end
+--     return char:FindFirstChild("HumanoidRootPart")
+-- end
+
+-- ---------------------------------------------------------------------
+-- -- UTILITY: Safe Teleport v5
+-- -- 5 attempt, hard-velocity kill, CFrame override
+-- ---------------------------------------------------------------------
+-- local function SafeTeleport(destination)
+--     for _ = 1, 5 do
+--         local hrp = HRP()
+--         if hrp then
+--             hrp.AssemblyLinearVelocity = Vector3.zero
+--             hrp.CFrame = CFrame.new(destination)
+--         end
+--         task.wait(0.08)
+--     end
+-- end
+
+-- ---------------------------------------------------------------------
+-- -- EVENT HANDLER: MULAI EVENT
+-- -- Save posisi dan teleport masuk
+-- ---------------------------------------------------------------------
+-- local function HandleEventStart()
+--     if eventActive then return end
+--     eventActive = true
+
+--     local hrp = HRP()
+--     if hrp then
+--         savedPosition = hrp.Position
+--     end
+
+--     print("[AutoDisco v13] Teleporting IN →", DISCO_POSITION)
+
+--     SafeTeleport(DISCO_POSITION + HEIGHT_OFFSET)
+-- end
+
+-- ---------------------------------------------------------------------
+-- -- EVENT HANDLER: AKHIR EVENT
+-- -- Teleport balik ke posisi asal
+-- ---------------------------------------------------------------------
+-- local function HandleEventEnd()
+--     if not eventActive then return end
+--     eventActive = false
+
+--     if savedPosition then
+--         print("[AutoDisco v13] Teleporting OUT →", savedPosition)
+--         SafeTeleport(savedPosition + HEIGHT_OFFSET)
+--     end
+
+--     savedPosition = nil
+-- end
+
+-- ---------------------------------------------------------------------
+-- -- PUBLIC API: Aktifkan AutoDisco
+-- ---------------------------------------------------------------------
+-- function StartAutoDisco()
+--     print("[AutoDisco v13] ENABLED")
+
+--     local CGE = Replion.Client:WaitReplion("ClassicGroupEvent")
+
+--     -- Pastikan listener tidak ganda
+--     if listener then
+--         listener:Disconnect()
+--         listener = nil
+--     end
+
+--     -- Daftarkan listener baru
+--     listener = CGE:OnChange("Active", function(state)
+--         if state == true then
+--             HandleEventStart()
+--         else
+--             HandleEventEnd()
+--         end
+--     end)
+
+--     -- Jika event sedang aktif ketika script hidup
+--     if CGE:Get("Active") == true then
+--         HandleEventStart()
+--     end
+-- end
+
+-- ---------------------------------------------------------------------
+-- -- PUBLIC API: Matikan AutoDisco
+-- ---------------------------------------------------------------------
+-- function StopAutoDisco()
+--     print("[AutoDisco v13] DISABLED")
+
+--     if listener then
+--         listener:Disconnect()
+--         listener = nil
+--     end
+
+--     eventActive   = false
+--     savedPosition = nil
+-- end
+
 ---------------------------------------------------------------------
--- AUTO DISCO v13 — FINAL PRODUCTION VERSION
--- Clean, Efisien, Stabil, dan Terintegrasi dengan Event Asli (Replion)
+-- AUTO TIMED EVENT (ONE FUNCTION ONLY)
+-- Schedule: 01,03,05,07,09,11,13,15,17,19,21,23
+-- Duration: 30 Minutes
+-- Includes: Countdown MM:SS UI
 ---------------------------------------------------------------------
 
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local Replion = require(RS.Packages.Replion)
+do
+    ----------------------------------------------------------------
+    -- SERVICES
+    ----------------------------------------------------------------
+    local RunService = game:GetService("RunService")
+    local Players = game:GetService("Players")
+    local LP = Players.LocalPlayer
 
-local LP = Players.LocalPlayer
+    ----------------------------------------------------------------
+    -- CONFIG
+    ----------------------------------------------------------------
+    local EVENT_HOURS = {
+        [0]=true,[2]=true,[4]=true,[6]=true,
+        [8]=true,[10]=true,[12]=true,
+        [14]=true,[16]=true,[18]=true,
+        [20]=true,[22]=true,
+    }
 
----------------------------------------------------------------------
--- KONFIGURASI TELEPORT
----------------------------------------------------------------------
-local DISCO_POSITION     = Vector3.new(-8628, -548, 161)
-local HEIGHT_OFFSET      = Vector3.new(0, 2, 0)
 
----------------------------------------------------------------------
--- INTERNAL STATE
----------------------------------------------------------------------
-local eventActive        = false
-local savedPosition      = nil
-local listener           = nil
+    local EVENT_DURATION = 30 * 60 -- 30 menit
+    local TARGET_POS = Vector3.new(715, -487, 8910)
 
----------------------------------------------------------------------
--- UTILITY: Ambil HRP
----------------------------------------------------------------------
-local function HRP()
-    local char = LP.Character
-    if not char then return nil end
-    return char:FindFirstChild("HumanoidRootPart")
-end
+    ----------------------------------------------------------------
+    -- INTERNAL STATE
+    ----------------------------------------------------------------
+    local running = false
+    local active = false
+    local eventStartUTC = 0
+    local savedPos = nil
+    local uiConn = nil
 
----------------------------------------------------------------------
--- UTILITY: Safe Teleport v5
--- 5 attempt, hard-velocity kill, CFrame override
----------------------------------------------------------------------
-local function SafeTeleport(destination)
-    for _ = 1, 5 do
-        local hrp = HRP()
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = CFrame.new(destination)
+    ----------------------------------------------------------------
+    -- TIME HELPERS (UTC SAFE)
+    ----------------------------------------------------------------
+    local function NowUTC()
+        return os.time(os.date("!*t"))
+    end
+
+    local function FormatHMS(sec)
+        sec = math.max(0, sec)
+        local h = math.floor(sec / 3600)
+        local m = math.floor((sec % 3600) / 60)
+        local s = sec % 60
+        return string.format("%02d:%02d:%02d", h, m, s)
+    end
+
+    local function FormatHM(ts, utc)
+        local t = os.date(utc and "!*t" or "*t", ts)
+        return string.format("%02d:%02d", t.hour, t.min)
+    end
+
+    ----------------------------------------------------------------
+    -- NEXT EVENT (ABSOLUTE, TERDEKAT)
+    ----------------------------------------------------------------
+    local function NextEventTs()
+        local now = NowUTC()
+        local t = os.date("!*t", now)
+        local nearest = nil
+
+        -- hari ini (UTC)
+        for h in pairs(EVENT_HOURS) do
+            local ts = os.time({
+                year=t.year, month=t.month, day=t.day,
+                hour=h, min=0, sec=0, isdst=false
+            })
+            if ts > now and (not nearest or ts < nearest) then
+                nearest = ts
+            end
         end
-        task.wait(0.08)
-    end
-end
 
----------------------------------------------------------------------
--- EVENT HANDLER: MULAI EVENT
--- Save posisi dan teleport masuk
----------------------------------------------------------------------
-local function HandleEventStart()
-    if eventActive then return end
-    eventActive = true
-
-    local hrp = HRP()
-    if hrp then
-        savedPosition = hrp.Position
-    end
-
-    print("[AutoDisco v13] Teleporting IN →", DISCO_POSITION)
-
-    SafeTeleport(DISCO_POSITION + HEIGHT_OFFSET)
-end
-
----------------------------------------------------------------------
--- EVENT HANDLER: AKHIR EVENT
--- Teleport balik ke posisi asal
----------------------------------------------------------------------
-local function HandleEventEnd()
-    if not eventActive then return end
-    eventActive = false
-
-    if savedPosition then
-        print("[AutoDisco v13] Teleporting OUT →", savedPosition)
-        SafeTeleport(savedPosition + HEIGHT_OFFSET)
-    end
-
-    savedPosition = nil
-end
-
----------------------------------------------------------------------
--- PUBLIC API: Aktifkan AutoDisco
----------------------------------------------------------------------
-function StartAutoDisco()
-    print("[AutoDisco v13] ENABLED")
-
-    local CGE = Replion.Client:WaitReplion("ClassicGroupEvent")
-
-    -- Pastikan listener tidak ganda
-    if listener then
-        listener:Disconnect()
-        listener = nil
-    end
-
-    -- Daftarkan listener baru
-    listener = CGE:OnChange("Active", function(state)
-        if state == true then
-            HandleEventStart()
-        else
-            HandleEventEnd()
+        -- besok (UTC)
+        if not nearest then
+            for h in pairs(EVENT_HOURS) do
+                local ts = os.time({
+                    year=t.year, month=t.month, day=t.day + 1,
+                    hour=h, min=0, sec=0, isdst=false
+                })
+                if not nearest or ts < nearest then
+                    nearest = ts
+                end
+            end
         end
-    end)
 
-    -- Jika event sedang aktif ketika script hidup
-    if CGE:Get("Active") == true then
-        HandleEventStart()
+        return nearest
+    end
+
+    ----------------------------------------------------------------
+    -- TELEPORT UTILS
+    ----------------------------------------------------------------
+    local function HRP()
+        local c = LP.Character
+        return c and c:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function SafeTP(pos)
+        for _ = 1, 5 do
+            local hrp = HRP()
+            if hrp then
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.CFrame = CFrame.new(pos)
+            end
+            task.wait(0.08)
+        end
+    end
+
+    ----------------------------------------------------------------
+    -- PUBLIC FUNCTION
+    ----------------------------------------------------------------
+    function ToggleAutoTimedEvent(state, uiParagraph)
+        running = state
+
+        -- OFF
+        if not state then
+            active = false
+
+            if uiConn then
+                uiConn:Disconnect()
+                uiConn = nil
+            end
+
+            if savedPos then
+                SafeTP(savedPos + Vector3.new(0,2,0))
+            end
+
+            savedPos = nil
+            if uiParagraph then
+                uiParagraph:SetDesc("Status: Off")
+            end
+            return
+        end
+
+        -- ON (RenderStepped updater)
+        uiConn = RunService.RenderStepped:Connect(function()
+            if not running or not uiParagraph then return end
+
+            local nowUTC = NowUTC()
+            local nowT = os.date("!*t", nowUTC)
+
+            -- START EVENT (UTC, menit 00)
+            if EVENT_HOURS[nowT.hour] and nowT.min == 0 and not active then
+                local hrp = HRP()
+                if hrp then
+                    savedPos = hrp.Position
+                end
+                active = true
+                eventStartUTC = nowUTC
+                SafeTP(TARGET_POS + Vector3.new(0,2,0))
+            end
+
+            -- STOP EVENT (30 menit)
+            if active and (nowUTC - eventStartUTC >= EVENT_DURATION) then
+                active = false
+                if savedPos then
+                    SafeTP(savedPos + Vector3.new(0,2,0))
+                end
+                savedPos = nil
+            end
+
+            -- UI UPDATE (OPSI C)
+            if active then
+                uiParagraph:SetDesc(
+                    "EVENT ACTIVE\nRemaining: " ..
+                    FormatHMS(EVENT_DURATION - (nowUTC - eventStartUTC))
+                )
+            else
+                local nextTs = NextEventTs()
+                if nextTs then
+                    uiParagraph:SetDesc(
+                        string.format(
+                            "Server : %s\nLocal : %s\nCountdown : %s",
+                            FormatHM(nextTs, true),       -- server (UTC)
+                            FormatHM(nextTs, false),      -- local
+                            FormatHMS(nextTs - nowUTC)    -- countdown
+                        )
+                    )
+                else
+                    uiParagraph:SetDesc("Next Event: --:--")
+                end
+            end
+        end)
     end
 end
 
----------------------------------------------------------------------
--- PUBLIC API: Matikan AutoDisco
----------------------------------------------------------------------
-function StopAutoDisco()
-    print("[AutoDisco v13] DISABLED")
 
-    if listener then
-        listener:Disconnect()
-        listener = nil
-    end
+-- ---------------------------------------------------------------------
+-- -- GLOBAL EXPORT (untuk SimMode atau script eksternal)
+-- ---------------------------------------------------------------------
+-- _G.StartAutoDisco = StartAutoDisco
+-- _G.StopAutoDisco  = StopAutoDisco
 
-    eventActive   = false
-    savedPosition = nil
-end
-
----------------------------------------------------------------------
--- GLOBAL EXPORT (untuk SimMode atau script eksternal)
----------------------------------------------------------------------
-_G.StartAutoDisco = StartAutoDisco
-_G.StopAutoDisco  = StopAutoDisco
-
-print("[AutoDisco v13] Loaded.")
+-- print("[AutoDisco v13] Loaded.")
 
 
 
@@ -263,6 +454,7 @@ local Waypoints = {
     ["Crater Island"]       = Vector3.new(1070, 2, 5102),
     ["Cristmas Island"]     = Vector3.new(1175, 24, 1558),
     ["Underground Cellar"]     = Vector3.new(2135, -91, -700),
+    ["Christmas Cave"]     = Vector3.new(715, -487, 8910),
 }
 
 local function TeleportTo(targetPos)
@@ -1106,20 +1298,18 @@ TabWeather:Toggle({ Title = "Smart Monitor", Desc = "Checks every 15s", Icon = "
 
 -- [[ TAB 4: TELEPORT ]]
 TabTeleport:Section({ Title = "Auto Event" })
+local TimedLabel = TabTeleport:Paragraph({
+    Title = "Christmas Time",
+    Desc = "Status: Off"
+})
+
 TabTeleport:Toggle({
-    Title = "Auto Join Disco",
-    Desc = "Warp to Iron Cafe when Active",
-    Icon = "music",
+    Title = "Auto Christmas Time",
+    Desc = "Auto Join",
+    Icon = "clock",
     Value = false,
     Callback = function(state)
-        SettingsState.AutoEventDisco.Active = state
-        if state then 
-            StartAutoDisco()
-            WindUI:Notify({Title = "Event", Content = "Scanning for Disco...", Duration = 2})
-        else 
-            StopAutoDisco()
-            WindUI:Notify({Title = "Event", Content = "Scanner Stopped", Duration = 2})
-        end
+        ToggleAutoTimedEvent(state, TimedLabel)
     end
 })
 
@@ -1181,7 +1371,7 @@ TabSettings:Button({
         local p = game:GetService("Players").LocalPlayer
         
         WindUI:Notify({Title = "System", Content = "Rejoining...", Duration = 3})
-        local myScript = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/99bieber/uqill/refs/heads/main/uqill.lua"))()'
+        local myScript = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/syauqiaditia/roblox-uqill-fishit/refs/heads/main/uqill.lua"))()'
         if (syn and syn.queue_on_teleport) then
             syn.queue_on_teleport(myScript)
         elseif queue_on_teleport then
