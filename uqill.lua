@@ -258,7 +258,7 @@ do
     }
 
 
-    local EVENT_DURATION = 30 * 60 -- 30 menit
+    local EVENT_DURATION = 29 * 60 -- 30 menit
     local TARGET_POS = Vector3.new(715, -487, 8910)
 
     ----------------------------------------------------------------
@@ -1104,6 +1104,82 @@ local function DisableNameSpoof()
 	RestoreName()
 end
 
+-- -- =====================================================
+-- -- 🎣 HOLY TRIDENT FULL ANIMATION OVERRIDE (NO CONFLICT)
+-- -- Replace ALL animations with Holy Trident set
+-- -- =====================================================
+
+-- local Players = game:GetService("Players")
+-- local LP = Players.LocalPlayer
+
+-- -------------------------------------------------------
+-- -- STATE
+-- -------------------------------------------------------
+-- local State = {
+--     Enabled = false,
+--     Index = 1
+-- }
+
+-- -------------------------------------------------------
+-- -- HOLY TRIDENT ANIMATION SET (OFFICIAL ASSET)
+-- -------------------------------------------------------
+-- local HOLY_TRIDENT_ANIMS = {
+--     "rbxassetid://114917462794864",  -- RodThrow
+--     "rbxassetid://83219020397849",   -- StartRodCharge / EquipIdle
+--     "rbxassetid://12683185389724",   -- ReelStart / ReelIdle / Intermission
+--     "rbxassetid://1128167068291703", -- FishCaught
+-- }
+
+-- -------------------------------------------------------
+-- -- CORE OVERRIDE
+-- -------------------------------------------------------
+-- local function HookAnimator(char)
+--     local hum = char:WaitForChild("Humanoid")
+--     local animator = hum:WaitForChild("Animator")
+
+--     animator.AnimationPlayed:Connect(function(track)
+--         if not State.Enabled then return end
+
+--         -- hentikan animasi asli
+--         track:Stop()
+
+--         -- rotate holy anim
+--         State.Index = State.Index + 1
+--         if State.Index > #HOLY_TRIDENT_ANIMS then
+--             State.Index = 1
+--         end
+
+--         local anim = track.Animation
+--         anim.AnimationId = HOLY_TRIDENT_ANIMS[State.Index]
+
+--         local newTrack = animator:LoadAnimation(anim)
+--         newTrack.Priority = track.Priority -- jaga priority
+--         newTrack:Play()
+--     end)
+-- end
+
+-- -------------------------------------------------------
+-- -- PUBLIC API
+-- -------------------------------------------------------
+-- function EnableHolyFullOverride()
+--     State.Enabled = true
+--     warn("[HolyFullOverride] ENABLED")
+-- end
+
+-- function DisableHolyFullOverride()
+--     State.Enabled = false
+--     warn("[HolyFullOverride] DISABLED")
+-- end
+
+-- -------------------------------------------------------
+-- -- INIT
+-- -------------------------------------------------------
+-- if LP.Character then
+--     HookAnimator(LP.Character)
+-- end
+
+-- LP.CharacterAdded:Connect(HookAnimator)
+
 -- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
 -- =====================================================
@@ -1172,6 +1248,21 @@ TabPlayer:Toggle({
 		end
 	end
 })
+
+-- TabFishing:Toggle({
+--     Title = "Holy Trident Full Anim",
+--     Desc = "Replace all fishing animations",
+--     Icon = "zap",
+--     Value = false,
+--     Callback = function(state)
+--         if state then
+--             EnableHolyFullOverride()
+--         else
+--             DisableHolyFullOverride()
+--         end
+--     end
+-- })
+
 
 TabPlayer:Section({ Title = "Players Feature" })
 TabPlayer:Toggle({ Title = "Walk on Water", Desc = "Creates a platform below you", Icon = "waves", Value = false, Callback = function(state) ToggleWaterWalk(state); WindUI:Notify({Title = "Movement", Content = state and "Water Walk ON" or "Water Walk OFF", Duration = 2}) end })
