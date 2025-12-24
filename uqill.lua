@@ -1689,17 +1689,17 @@ TabSell:Toggle({ Title = "Auto Sell (Time)", Desc = "Safe Pauses Fishing to Sell
 TabSell:Input({
     Title = "Sell Interval (Seconds)",
     Desc = "Time between sells",
-    Value = "60",
+    Value = "600",
     Callback = function(text)
         -- hanya angka bulat
         if not text:match("^%d+$") then
-            SettingsState.AutoSell.TimeInterval = 60
+            SettingsState.AutoSell.TimeInterval = 600
             return "60"
         end
 
         local num = tonumber(text)
         if not num then
-            SettingsState.AutoSell.TimeInterval = 60
+            SettingsState.AutoSell.TimeInterval = 600
             return "60"
         end
 
