@@ -1182,8 +1182,13 @@ end
 
 
 ---------------------------------------------------------------------
--- 🎣 FISH WEBHOOK LOGGER (FINAL CPU SAFE VERSION)
+-- 🎣 FISH WEBHOOK LOGGER (FINAL - STATIC RARITY SOURCE)
 ---------------------------------------------------------------------
+
+-------------------------------------------------------
+-- CONFIG
+-------------------------------------------------------
+local DEBUG = false -- set false kalau sudah beres
 
 -------------------------------------------------------
 -- SERVICES
@@ -1196,13 +1201,22 @@ local LocalPlayer = Players.LocalPlayer
 local net = ReplicatedStorage.Packages["_Index"]["sleitnick_net@0.2.0"].net
 
 -------------------------------------------------------
+-- DEBUG LOGGER
+-------------------------------------------------------
+local function dlog(...)
+	if DEBUG then
+		warn("[WEBHOOK][DEBUG]", ...)
+	end
+end
+
+-------------------------------------------------------
 -- STATE
 -------------------------------------------------------
 SettingsState.WebhookFish = {
 	Active = false,
 	Url = "",
 	SentUUID = {},
-	SelectedRarities = {} -- whitelist, empty = allow all
+	SelectedRarities = {} -- [tier] = true
 }
 
 -------------------------------------------------------
@@ -1214,6 +1228,10 @@ local HttpRequest =
 	or request
 	or (fluxus and fluxus.request)
 	or (krnl and krnl.request)
+
+if not HttpRequest then
+	warn("[WEBHOOK][FATAL] HttpRequest not available in this executor")
+end
 
 -------------------------------------------------------
 -- RARITY MAP
@@ -1229,7 +1247,20 @@ local RARITY_MAP = {
 }
 
 -------------------------------------------------------
--- RARITY COLOR + FAKE GRADIENT
+-- NAME → TIER (UI)
+-------------------------------------------------------
+local RARITY_NAME_TO_TIER = {
+	Common = 1,
+	Uncommon = 2,
+	Rare = 3,
+	Epic = 4,
+	Legendary = 5,
+	Mythic = 6,
+	Secret = 7,
+}
+
+-------------------------------------------------------
+-- COLOR + GRADIENT
 -------------------------------------------------------
 local RARITY_COLOR = {
 	[1] = 0x9e9e9e,
@@ -1252,7 +1283,7 @@ local RARITY_GRADIENT = {
 }
 
 -------------------------------------------------------
--- FISH DATABASE (SCAN ONCE)
+-- FISH DATABASE (STATIC SOURCE OF TRUTH)
 -------------------------------------------------------
 local FishDB = {}
 
@@ -1270,13 +1301,13 @@ for _, module in ipairs(ReplicatedStorage.Items:GetChildren()) do
 end
 
 -------------------------------------------------------
--- ICON CACHE (EVENT-DRIVEN)
+-- ICON CACHE (EVENT DRIVEN)
 -------------------------------------------------------
-local IconCache  = {} -- fishId -> imageUrl
-local IconWaiter = {} -- fishId -> { callbacks }
+local IconCache  = {}
+local IconWaiter = {}
 
 -------------------------------------------------------
--- FETCH ICON (NO POLLING, NO LOOP)
+-- FETCH ICON
 -------------------------------------------------------
 local function FetchFishIconAsync(fishId, onReady)
 	if IconCache[fishId] then
@@ -1292,32 +1323,26 @@ local function FetchFishIconAsync(fishId, onReady)
 	IconWaiter[fishId] = { onReady }
 
 	task.spawn(function()
-		if not HttpRequest then return end
+		local fish = FishDB[fishId]
+		if not fish or not fish.Icon then
+			dlog("No icon for fishId", fishId)
+			return
+		end
 
-		local icon = FishDB[fishId] and FishDB[fishId].Icon
-		if not icon then return end
-
-		local assetId = tostring(icon):match("%d+")
+		local assetId = tostring(fish.Icon):match("%d+")
 		if not assetId then return end
 
 		local api =
 			("https://thumbnails.roblox.com/v1/assets?assetIds=%s&size=420x420&format=Png&isCircular=false")
 			:format(assetId)
 
-		local res = HttpRequest({
-			Url = api,
-			Method = "GET",
-			Headers = {
-				["Accept"] = "application/json",
-				["User-Agent"] = "Roblox/WinInet"
-			}
-		})
+		local res = HttpRequest({ Url = api, Method = "GET" })
+		if not res or not res.Body then
+			dlog("Icon fetch failed")
+			return
+		end
 
-		if not res then return end
-		local body = res.Body or res.ResponseBody or res.body
-		if not body then return end
-
-		local ok, data = pcall(HttpService.JSONDecode, HttpService, body)
+		local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
 		if not ok then return end
 
 		local imageUrl =
@@ -1326,81 +1351,125 @@ local function FetchFishIconAsync(fishId, onReady)
 		if not imageUrl then return end
 
 		IconCache[fishId] = imageUrl
+		dlog("Icon cached for", fishId)
 
 		for _, cb in ipairs(IconWaiter[fishId]) do
 			cb(imageUrl)
 		end
-
 		IconWaiter[fishId] = nil
 	end)
 end
 
 -------------------------------------------------------
--- HELPERS
+-- STRICT STATIC RARITY FILTER
 -------------------------------------------------------
-local function IsRarityAllowed(id)
-	local fish = FishDB[id]
-	if not fish then return false end
-	if next(SettingsState.WebhookFish.SelectedRarities) == nil then return true end
-	return SettingsState.WebhookFish.SelectedRarities[fish.Tier] == true
+local function IsRarityAllowedById(fishId)
+	local fish = FishDB[fishId]
+	if not fish then
+		dlog("BLOCK: fish not in DB", fishId)
+		return false
+	end
+
+	local tier = fish.Tier
+	if type(tier) ~= "number" then
+		dlog("BLOCK: invalid tier for", fishId)
+		return false
+	end
+
+	local selected = SettingsState.WebhookFish.SelectedRarities
+
+	if next(selected) == nil then
+		dlog("ALLOW: no filter selected")
+		return true
+	end
+
+	if selected[tier] then
+		dlog("ALLOW: tier", tier, "matched")
+		return true
+	end
+
+	dlog("BLOCK: tier", tier, "not selected")
+	return false
 end
 
 -------------------------------------------------------
 -- BUILD PAYLOAD
 -------------------------------------------------------
 local function BuildFishPayload(player, fishId, weight)
-	local tier = FishDB[fishId] and FishDB[fishId].Tier
-
-	local embed = {
-		title = (RARITY_GRADIENT[tier] or "") .. " 🎣 Fish Obtained",
-		color = RARITY_COLOR[tier] or 0x30ff6a,
-		fields = {
-			{ name = "Player", value = player, inline = true },
-			{ name = "Fish", value = FishDB[fishId].Name, inline = true },
-			{ name = "Rarity", value = RARITY_MAP[tier], inline = true },
-			{ name = "Weight", value = string.format("%.2f kg", weight or 0), inline = true },
-		},
-		timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-		thumbnail = { url = IconCache[fishId] }
-	}
+	local fish = FishDB[fishId]
+	local tier = fish.Tier
 
 	return {
 		username = "UQiLL Fishing Logger",
-		embeds = { embed }
+		embeds = {{
+			title = (RARITY_GRADIENT[tier] or "") .. " 🎣 Fish Obtained",
+			color = RARITY_COLOR[tier],
+			fields = {
+				{ name = "Player", value = player, inline = true },
+				{ name = "Fish", value = fish.Name, inline = true },
+				{ name = "Rarity", value = RARITY_MAP[tier], inline = true },
+				{ name = "Weight", value = string.format("%.2f kg", weight or 0), inline = true },
+			},
+			thumbnail = { url = IconCache[fishId] },
+			timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+		}}
 	}
 end
 
 -------------------------------------------------------
--- SEND WEBHOOK
+-- SEND WEBHOOK (HARD DEBUG)
 -------------------------------------------------------
 local function SendWebhook(payload)
-	if not SettingsState.WebhookFish.Active then return end
-	if SettingsState.WebhookFish.Url == "" then return end
-	if not HttpRequest then return end
+	if not SettingsState.WebhookFish.Active then
+		dlog("Webhook inactive")
+		return
+	end
 
-	task.spawn(function()
-		HttpRequest({
-			Url = SettingsState.WebhookFish.Url,
-			Method = "POST",
-			Headers = { ["Content-Type"] = "application/json" },
-			Body = HttpService:JSONEncode(payload)
-		})
-	end)
+	if SettingsState.WebhookFish.Url == "" then
+		dlog("Webhook URL empty")
+		return
+	end
+
+	dlog("Sending webhook...")
+
+	local res = HttpRequest({
+		Url = SettingsState.WebhookFish.Url,
+		Method = "POST",
+		Headers = { ["Content-Type"] = "application/json" },
+		Body = HttpService:JSONEncode(payload)
+	})
+
+	if not res then
+		dlog("No response from HttpRequest")
+		return
+	end
+
+	dlog("Response:", res.StatusCode, res.Success)
 end
 
 -------------------------------------------------------
--- EVENT HANDLER (CPU SAFE)
+-- EVENT HANDLER (FINAL)
 -------------------------------------------------------
 local ObtainedNewFish = net["RE/ObtainedNewFishNotification"]
 
 ObtainedNewFish.OnClientEvent:Connect(function(_, weightData, wrapper)
+	dlog("Event fired")
+
 	if not SettingsState.WebhookFish.Active then return end
 	if not wrapper or not wrapper.InventoryItem then return end
 
 	local item = wrapper.InventoryItem
-	if not item or not item.UUID then return end
-	if not IsRarityAllowed(item.Id) then return end
-	if SettingsState.WebhookFish.SentUUID[item.UUID] then return end
+	if not item.Id or not item.UUID then return end
+
+	if not IsRarityAllowedById(item.Id) then
+		dlog("Event blocked by rarity filter")
+		return
+	end
+
+	if SettingsState.WebhookFish.SentUUID[item.UUID] then
+		dlog("Duplicate UUID")
+		return
+	end
 
 	SettingsState.WebhookFish.SentUUID[item.UUID] = true
 
@@ -1414,7 +1483,6 @@ ObtainedNewFish.OnClientEvent:Connect(function(_, weightData, wrapper)
 		)
 	end)
 end)
-
 
 -------------------------------------------------------
 -- CONTROLLER
@@ -1774,20 +1842,40 @@ TabWebHook:Section({ Title = "Webhook Rarity Filter" })
 TabWebHook:Dropdown({
 	Title = "Rarity Filter",
 	Desc = "Select multiple rarities (empty = all)",
-    Values = RarityList,
-    Value = {},
-    Multi = true,
-    AllowNone = true,
+	Values = RarityList,
+	Multi = true,
+	AllowNone = true,
+
 	Callback = function(selectedList)
-		-- reset whitelist
+		-- reset
 		SettingsState.WebhookFish.SelectedRarities = {}
 
-		for _, rarityName in ipairs(selectedList or {}) do
-			local tier = RARITY_NAME_TO_TIER[rarityName]
-			if tier then
-				SettingsState.WebhookFish.SelectedRarities[tier] = true
+		warn("[WEBHOOK][DEBUG] Raw selectedList =", selectedList)
+
+		-- CASE 1: map { Rare = true }
+		for key, value in pairs(selectedList or {}) do
+			if type(key) == "string" and value == true then
+				local tier = RARITY_NAME_TO_TIER[key]
+				if tier then
+					SettingsState.WebhookFish.SelectedRarities[tier] = true
+				end
 			end
 		end
+
+		-- CASE 2: array { "Rare", "Epic" }
+		for _, value in ipairs(selectedList or {}) do
+			if type(value) == "string" then
+				local tier = RARITY_NAME_TO_TIER[value]
+				if tier then
+					SettingsState.WebhookFish.SelectedRarities[tier] = true
+				end
+			end
+		end
+
+		warn(
+			"[WEBHOOK][DEBUG] Normalized SelectedRarities =",
+			SettingsState.WebhookFish.SelectedRarities
+		)
 
 		if next(SettingsState.WebhookFish.SelectedRarities) == nil then
 			WindUI:Notify({
@@ -1804,6 +1892,7 @@ TabWebHook:Dropdown({
 		end
 	end
 })
+
 
 
 -------------------------------------------------------
