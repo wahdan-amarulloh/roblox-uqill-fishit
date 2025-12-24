@@ -106,6 +106,8 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local RunService = game:GetService("RunService")
 
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
 -- ---------------------------------------------------------------------
 -- -- AUTO DISCO v13 — FINAL PRODUCTION VERSION
 -- -- Clean, Efisien, Stabil, dan Terintegrasi dengan Event Asli (Replion)
@@ -946,8 +948,6 @@ local function SetSelectedRarities(list)
             Legendary = 5,
             Mythic = 6,
             Secret = 7,
-            Exotic = 8,
-            Azure = 9
         }
 
         local tier = map[rarityName]
@@ -1180,6 +1180,265 @@ end
 
 -- LP.CharacterAdded:Connect(HookAnimator)
 
+
+---------------------------------------------------------------------
+-- 🎣 FISH WEBHOOK LOGGER (FINAL CPU SAFE VERSION)
+---------------------------------------------------------------------
+
+-------------------------------------------------------
+-- SERVICES
+-------------------------------------------------------
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService       = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local net = ReplicatedStorage.Packages["_Index"]["sleitnick_net@0.2.0"].net
+
+-------------------------------------------------------
+-- STATE
+-------------------------------------------------------
+SettingsState.WebhookFish = {
+	Active = false,
+	Url = "",
+	SentUUID = {},
+	SelectedRarities = {} -- whitelist, empty = allow all
+}
+
+-------------------------------------------------------
+-- EXECUTOR HTTP
+-------------------------------------------------------
+local HttpRequest =
+	syn and syn.request
+	or http_request
+	or request
+	or (fluxus and fluxus.request)
+	or (krnl and krnl.request)
+
+-------------------------------------------------------
+-- RARITY MAP
+-------------------------------------------------------
+local RARITY_MAP = {
+	[1] = "Common",
+	[2] = "Uncommon",
+	[3] = "Rare",
+	[4] = "Epic",
+	[5] = "Legendary",
+	[6] = "Mythic",
+	[7] = "Secret",
+}
+
+-------------------------------------------------------
+-- RARITY COLOR + FAKE GRADIENT
+-------------------------------------------------------
+local RARITY_COLOR = {
+	[1] = 0x9e9e9e,
+	[2] = 0x4caf50,
+	[3] = 0x2196f3,
+	[4] = 0x9c27b0,
+	[5] = 0xff9800,
+	[6] = 0xf44336,
+	[7] = 0xff1744,
+}
+
+local RARITY_GRADIENT = {
+	[1] = "⬜",
+	[2] = "🟩",
+	[3] = "🟦",
+	[4] = "🟪",
+	[5] = "🟧",
+	[6] = "🟥",
+	[7] = "⬛",
+}
+
+-------------------------------------------------------
+-- FISH DATABASE (SCAN ONCE)
+-------------------------------------------------------
+local FishDB = {}
+
+for _, module in ipairs(ReplicatedStorage.Items:GetChildren()) do
+	if module:IsA("ModuleScript") then
+		local ok, mod = pcall(require, module)
+		if ok and mod and mod.Data and mod.Data.Type == "Fish" then
+			FishDB[mod.Data.Id] = {
+				Name = mod.Data.Name,
+				Tier = mod.Data.Tier,
+				Icon = mod.Data.Icon
+			}
+		end
+	end
+end
+
+-------------------------------------------------------
+-- ICON CACHE (EVENT-DRIVEN)
+-------------------------------------------------------
+local IconCache  = {} -- fishId -> imageUrl
+local IconWaiter = {} -- fishId -> { callbacks }
+
+-------------------------------------------------------
+-- FETCH ICON (NO POLLING, NO LOOP)
+-------------------------------------------------------
+local function FetchFishIconAsync(fishId, onReady)
+	if IconCache[fishId] then
+		onReady(IconCache[fishId])
+		return
+	end
+
+	if IconWaiter[fishId] then
+		table.insert(IconWaiter[fishId], onReady)
+		return
+	end
+
+	IconWaiter[fishId] = { onReady }
+
+	task.spawn(function()
+		if not HttpRequest then return end
+
+		local icon = FishDB[fishId] and FishDB[fishId].Icon
+		if not icon then return end
+
+		local assetId = tostring(icon):match("%d+")
+		if not assetId then return end
+
+		local api =
+			("https://thumbnails.roblox.com/v1/assets?assetIds=%s&size=420x420&format=Png&isCircular=false")
+			:format(assetId)
+
+		local res = HttpRequest({
+			Url = api,
+			Method = "GET",
+			Headers = {
+				["Accept"] = "application/json",
+				["User-Agent"] = "Roblox/WinInet"
+			}
+		})
+
+		if not res then return end
+		local body = res.Body or res.ResponseBody or res.body
+		if not body then return end
+
+		local ok, data = pcall(HttpService.JSONDecode, HttpService, body)
+		if not ok then return end
+
+		local imageUrl =
+			data and data.data and data.data[1] and data.data[1].imageUrl
+
+		if not imageUrl then return end
+
+		IconCache[fishId] = imageUrl
+
+		for _, cb in ipairs(IconWaiter[fishId]) do
+			cb(imageUrl)
+		end
+
+		IconWaiter[fishId] = nil
+	end)
+end
+
+-------------------------------------------------------
+-- HELPERS
+-------------------------------------------------------
+local function IsRarityAllowed(id)
+	local fish = FishDB[id]
+	if not fish then return false end
+	if next(SettingsState.WebhookFish.SelectedRarities) == nil then return true end
+	return SettingsState.WebhookFish.SelectedRarities[fish.Tier] == true
+end
+
+-------------------------------------------------------
+-- BUILD PAYLOAD
+-------------------------------------------------------
+local function BuildFishPayload(player, fishId, weight)
+	local tier = FishDB[fishId] and FishDB[fishId].Tier
+
+	local embed = {
+		title = (RARITY_GRADIENT[tier] or "") .. " 🎣 Fish Obtained",
+		color = RARITY_COLOR[tier] or 0x30ff6a,
+		fields = {
+			{ name = "Player", value = player, inline = true },
+			{ name = "Fish", value = FishDB[fishId].Name, inline = true },
+			{ name = "Rarity", value = RARITY_MAP[tier], inline = true },
+			{ name = "Weight", value = string.format("%.2f kg", weight or 0), inline = true },
+		},
+		timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+		thumbnail = { url = IconCache[fishId] }
+	}
+
+	return {
+		username = "UQiLL Fishing Logger",
+		embeds = { embed }
+	}
+end
+
+-------------------------------------------------------
+-- SEND WEBHOOK
+-------------------------------------------------------
+local function SendWebhook(payload)
+	if not SettingsState.WebhookFish.Active then return end
+	if SettingsState.WebhookFish.Url == "" then return end
+	if not HttpRequest then return end
+
+	task.spawn(function()
+		HttpRequest({
+			Url = SettingsState.WebhookFish.Url,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode(payload)
+		})
+	end)
+end
+
+-------------------------------------------------------
+-- EVENT HANDLER (CPU SAFE)
+-------------------------------------------------------
+local ObtainedNewFish = net["RE/ObtainedNewFishNotification"]
+
+ObtainedNewFish.OnClientEvent:Connect(function(_, weightData, wrapper)
+	if not SettingsState.WebhookFish.Active then return end
+	if not wrapper or not wrapper.InventoryItem then return end
+
+	local item = wrapper.InventoryItem
+	if not item or not item.UUID then return end
+	if not IsRarityAllowed(item.Id) then return end
+	if SettingsState.WebhookFish.SentUUID[item.UUID] then return end
+
+	SettingsState.WebhookFish.SentUUID[item.UUID] = true
+
+	FetchFishIconAsync(item.Id, function()
+		SendWebhook(
+			BuildFishPayload(
+				LocalPlayer.Name,
+				item.Id,
+				weightData and weightData.Weight or 0
+			)
+		)
+	end)
+end)
+
+
+-------------------------------------------------------
+-- CONTROLLER
+-------------------------------------------------------
+local function StartFishWebhook()
+	if SettingsState.WebhookFish.Active then return end
+	if SettingsState.WebhookFish.Url == "" then
+		WindUI:Notify({ Title = "Webhook", Content = "Webhook URL belum diisi", Duration = 2 })
+		return
+	end
+
+	SettingsState.WebhookFish.Active = true
+	SettingsState.WebhookFish.SentUUID = {}
+	warn("[WEBHOOK] ENABLED")
+end
+
+local function StopFishWebhook()
+	if not SettingsState.WebhookFish.Active then return end
+	SettingsState.WebhookFish.Active = false
+	SettingsState.WebhookFish.SentUUID = {}
+	warn("[WEBHOOK] DISABLED")
+end
+
+
 -- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
 -- =====================================================
@@ -1208,10 +1467,9 @@ local function setElementVisible(name, visible)
     end)
 end
 
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.1.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.2.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 
 local TabPlayer = Window:Tab({ Title = "Player Setting", Icon = "user" })
@@ -1220,6 +1478,7 @@ local TabFavorite = Window:Tab({ Title = "Auto Favorite", Icon = "star" })
 local TabSell = Window:Tab({ Title = "Auto Sell", Icon = "shopping-bag" })
 local TabWeather = Window:Tab({ Title = "Weather", Icon = "cloud-lightning" })
 local TabTeleport = Window:Tab({ Title = "Teleport", Icon = "map-pin" })
+local TabWebHook = Window:Tab({ Title = "Webhook", Icon = "webhook" })
 local TabSettings = Window:Tab({ Title = "Settings", Icon = "settings" })
 
 -- [[ TAB PLAYER: UTILITIES ]]
@@ -1477,7 +1736,7 @@ TabSettings:Button({ Title = "Anti-AFK", Desc = "Status: Active (Always On)", Ic
 TabSettings:Button({ Title = "Destroy Fish Popup", Desc = "Permanently removes 'Small Notification' UI", Icon = "trash-2", Callback = function() if SettingsState.PopupDestroyed then WindUI:Notify({Title = "UI", Content = "Already Destroyed!", Duration = 2}) return end; SettingsState.PopupDestroyed = true; ExecuteDestroyPopup(); WindUI:Notify({Title = "UI", Content = "Popup Destroyed!", Duration = 3}) end })
 TabSettings:Toggle({ Title = "FPS Boost (Potato)", Desc = "Low Graphics", Icon = "monitor", Value = false, Callback = function(state) ToggleFPSBoost(state) end })
 TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
-local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret","Exotic","Azure"}
+local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret",}
 
 TabFavorite:Dropdown({
     Title = "Select Rarity to Favorite",
@@ -1506,6 +1765,105 @@ TabFavorite:Toggle({
         end
     end
 })
+
+-------------------------------------------------------
+-- WIND UI (MULTI SELECT DROPDOWN)
+-------------------------------------------------------
+TabWebHook:Section({ Title = "Webhook Rarity Filter" })
+
+TabWebHook:Dropdown({
+	Title = "Rarity Filter",
+	Desc = "Select multiple rarities (empty = all)",
+    Values = RarityList,
+    Value = {},
+    Multi = true,
+    AllowNone = true,
+	Callback = function(selectedList)
+		-- reset whitelist
+		SettingsState.WebhookFish.SelectedRarities = {}
+
+		for _, rarityName in ipairs(selectedList or {}) do
+			local tier = RARITY_NAME_TO_TIER[rarityName]
+			if tier then
+				SettingsState.WebhookFish.SelectedRarities[tier] = true
+			end
+		end
+
+		if next(SettingsState.WebhookFish.SelectedRarities) == nil then
+			WindUI:Notify({
+				Title = "Webhook",
+				Content = "Rarity filter: All",
+				Duration = 2
+			})
+		else
+			WindUI:Notify({
+				Title = "Webhook",
+				Content = "Rarity filter updated",
+				Duration = 2
+			})
+		end
+	end
+})
+
+
+-------------------------------------------------------
+-- WIND UI : WEBHOOK URL INPUT
+-------------------------------------------------------
+local WebhookInputBuffer = ""
+
+TabWebHook:Section({ Title = "Webhook Settings" })
+
+TabWebHook:Input({
+	Title = "Discord Webhook URL",
+	Desc = "Paste your Discord webhook URL",
+	Placeholder = "https://discord.com/api/webhooks/...",
+	Callback = function(text)
+		WebhookInputBuffer = tostring(text)
+		return text
+	end
+})
+
+TabWebHook:Button({
+	Title = "Save Webhook URL",
+	Icon = "save",
+	Callback = function()
+		local url = WebhookInputBuffer:gsub("%s+", "")
+
+		if not url:match("^https://discord.com/api/webhooks/") then
+			WindUI:Notify({
+				Title = "Webhook",
+				Content = "Invalid webhook URL",
+				Duration = 2
+			})
+			return
+		end
+
+		SettingsState.WebhookFish.Url = url
+
+		WindUI:Notify({
+			Title = "Webhook",
+			Content = "Webhook URL saved",
+			Duration = 2
+		})
+
+		warn("[WEBHOOK] URL SAVED")
+	end
+})
+
+
+TabWebHook:Toggle({
+	Title = "Fish Webhook Logger",
+	Desc = "Enable fish webhook",
+	Value = false,
+	Callback = function(state)
+		if state then
+			StartFishWebhook()
+		else
+			StopFishWebhook()
+		end
+	end
+})
+
 
 
 -- Init
