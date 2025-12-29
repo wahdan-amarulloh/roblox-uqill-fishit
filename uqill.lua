@@ -613,33 +613,79 @@ end
 -- =====================================================
 -- 🎣 BAGIAN 5: LOGIKA FISHING (TURBO)
 -- =====================================================
+
+-------------------------------------------------------
+-- FISHING BLOCKER STATE
+-------------------------------------------------------
+local FishingBlocker = {
+    Enabled = false,
+    AutoGreat = false,
+}
+
+-------------------------------------------------------
+-- BUILTIN FISHING BLOCKER (TOGGLE AWARE)
+-- Block only when Enabled == true
+-------------------------------------------------------
+
+local BLOCKED_REMOTES = {
+    [ChargeRod]    = true,
+    [RequestGame]  = true,
+    [CompleteGame] = true,
+    [CancelInput]  = true,
+}
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+
+    if FishingBlocker.Enabled
+        and (method == "InvokeServer" or method == "FireServer")
+        and BLOCKED_REMOTES[self]
+        and not checkcaller()
+    then
+        -- ⛔ block builtin auto only
+        return nil
+    end
+
+    return oldNamecall(self, ...)
+end)
+
+
 local function startFishingLoop()
     local _Cancel = CancelInput
-    print("🎣 Standard Loop")
+    local _Complete = CompleteGame
+    local _Charge = ChargeRod
+     if FishingBlocker.AutoGreat then
+        local state = {
+            true
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/UpdateAutoFishingState"):InvokeServer(unpack(state))
+    end
     while getgenv().fishingStart do
-        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/ChargeFishingRod"):InvokeServer()
-        -- task.wait(delayCharge)
+        pcall(function() _Charge:InvokeServer() end) 
+        task.wait(0.055)
         if not getgenv().fishingStart then break end
-        
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/RequestFishingMinigameStarted"):InvokeServer(unpack(args))
         task.wait(delayTime)
         if not getgenv().fishingStart then break end 
-        
-        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingCompleted"):FireServer()
-        
-        -- task.wait(1)
-        -- game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RE/FishingStopped"):FireServer()
+        pcall(function() _Complete:FireServer() end)
         task.wait(0.05)
         pcall(function() _Cancel:InvokeServer() end)
     end
 end
 
 local function startFishingSuperInstantLoop()
-    print("⚡ TURBO Loop Started")
+    warn("LOOPING FAST")
     local _Charge = ChargeRod
     local _Request = RequestGame
     local _Complete = CompleteGame
     local _Cancel = CancelInput
+    if FishingBlocker.AutoGreat then
+        local state = {
+            true
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/UpdateAutoFishingState"):InvokeServer(unpack(state))
+    end
     while getgenv().fishingStart do
         pcall(function() _Cancel:InvokeServer() end)
         task.wait(0.055)
@@ -652,7 +698,6 @@ local function startFishingSuperInstantLoop()
         pcall(function() _Cancel:InvokeServer() end)
         task.wait(0.055)
     end
-    print("🛑 TURBO Loop Stopped")
 end
 
 local function resetCharacter()
@@ -1537,7 +1582,7 @@ end
 
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.2.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.3.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 
 local TabPlayer = Window:Tab({ Title = "Player Setting", Icon = "user" })
@@ -1601,11 +1646,31 @@ TabPlayer:Toggle({ Title = "Equip Radar", Desc = "Toggle Fishing Radar", Icon = 
 
 -- [[ TAB 1: FISHING ]]
 
+TabFishing:Section({ Title = "Mode" })
+TabFishing:Dropdown(
+    {
+        Title = "Category Fishing",
+        Desc = "Select Mode",
+        Values = {"Instant", "Blatan"},
+        Value = "Instant",
+        Callback = function(option)
+            instant, superInstant = (option == "Instant"), (option == "Blatan")
+            setElementVisible("Delay Fishing", false)
+            setElementVisible("Delay Catch", false)
+            setElementVisible("Reset Delay", false)
+            if instant then
+                setElementVisible("Delay Catch", true)
+            elseif superInstant then
+                setElementVisible("Delay Fishing", true)
+                setElementVisible("Reset Delay", true)
+            end
+        end
+    }
+)
 
-TabFishing:Dropdown({ Title = "Category Fishing", Desc = "Select Mode", Values = {"Instant", "Blatan"}, Value = "Instant", Callback = function(option) instant, superInstant = (option == "Instant"), (option == "Blatan"); setElementVisible("Delay Fishing", false); setElementVisible("Delay Catch", false); setElementVisible("Reset Delay", false); if instant then setElementVisible("Delay Catch", true) elseif superInstant then setElementVisible("Delay Fishing", true); setElementVisible("Reset Delay", true) end end })
+TabFishing:Section({ Title = "Settings" })
 TabFishing:Input({
     Title = "Delay Fishing",
-    Desc = "Wait Fish (Blatan)",
     Value = "1.30",
     Callback = function(text)
         if not text:match("^%d*%.?%d+$") then
@@ -1626,7 +1691,6 @@ TabFishing:Input({
 
 TabFishing:Input({
     Title = "Reset Delay",
-    Desc = "After Catch (Blatan)",
     Value = "0.20",
     Callback = function(text)
         if not text:match("^%d*%.?%d+$") then
@@ -1647,7 +1711,6 @@ TabFishing:Input({
 
 TabFishing:Input({
     Title = "Delay Catch",
-    Desc = "Instant Speed",
     Value = "1.05",
     Callback = function(text)
         if not text:match("^%d*%.?%d+$") then
@@ -1666,10 +1729,64 @@ TabFishing:Input({
     end
 })
 
-TabFishing:Toggle({ Title = "Activate Fishing", Desc = "Start/Stop Loop", Icon = "check", Value = false, Callback = function(state) getgenv().fishingStart = state; if state then pcall(function() CancelInput:InvokeServer() end); if superInstant then task.spawn(startFishingSuperInstantLoop) else task.spawn(startFishingLoop) end; WindUI:Notify({Title = "Fishing", Content = "Started!", Duration = 2}) else pcall(function() CompleteGame:FireServer() end); pcall(function() CancelInput:InvokeServer() end); WindUI:Notify({Title = "Fishing", Content = "Stopped", Duration = 2}) end end })
+TabFishing:Toggle(
+    {
+        Title = "Auto Great",
+        Desc = "Activated Before Start Looping",
+        Icon = "check",
+        Value = false,
+        Callback = function(state)
+            FishingBlocker.AutoGreat = state
+        end
+    }
+)
+
+TabFishing:Section({ Title = "Start" })
+TabFishing:Toggle(
+    {
+        Title = "Activate Fishing",
+        Icon = "check",
+        Value = false,
+        Callback = function(state)
+            getgenv().fishingStart = state
+            FishingBlocker.Enabled = state
+            if state then
+                pcall(
+                    function()
+                        CancelInput:InvokeServer()
+                    end
+                )
+                if superInstant then
+                    task.spawn(startFishingSuperInstantLoop)
+                else
+                    task.spawn(startFishingLoop)
+                end
+                WindUI:Notify({Title = "Fishing", Content = "Started!", Duration = 2})
+            else
+                if(FishingBlocker.AutoGreat) then
+                    local state = {
+                    false
+                    }
+                    game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/UpdateAutoFishingState"):InvokeServer(unpack(state))
+                end
+                pcall(
+                    function()
+                        CompleteGame:FireServer()
+                    end
+                )
+                pcall(
+                    function()
+                        CancelInput:InvokeServer()
+                    end
+                )
+                WindUI:Notify({Title = "Fishing", Content = "Stopped", Duration = 2})
+            end
+        end
+    }
+)
+
 TabFishing:Button({
     Title = "Unstuck",
-    Desc = "Unstuck while using blatant",
     Icon = "person-standing",
     Callback = function()
         task.spawn(function()
