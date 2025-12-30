@@ -2065,6 +2065,26 @@ function NoRender3D:Disable()
     self.Active = false
 end
 
+-------------------------------------------------
+-- QUEST UI VISIBILITY CONTROLLER
+-------------------------------------------------
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local function SetQuestListVisible(state)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+
+    local questGui = playerGui:FindFirstChild("Quest")
+    if not questGui then return end
+
+    local list = questGui:FindFirstChild("List")
+    if list and list:IsA("Frame") then
+        list.Visible = state
+    end
+end
+
+
 -- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
 -- =====================================================
@@ -2095,7 +2115,7 @@ end
 
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.4.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.5.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 Window:EditOpenButton({
     Enabled = false,
@@ -2705,6 +2725,21 @@ sectionMonitoring:Toggle({
 	end
 })
 
+local sectionMisc = TabSettings:Section({ Title = "MISC" })
+sectionMisc:Toggle({
+    Title = "Show Quest List",
+    Icon = "list",
+    Value = true,
+    Callback = function(state)
+        SetQuestListVisible(state)
+
+        WindUI:Notify({
+            Title = "Quest UI",
+            Content = state and "Quest List Shown" or "Quest List Hidden",
+            Duration = 2
+        })
+    end
+})
 
 -- TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
 local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret",}
