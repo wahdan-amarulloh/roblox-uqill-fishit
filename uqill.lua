@@ -1867,6 +1867,177 @@ local function StopFishWebhook()
 	warn("[WEBHOOK] DISABLED")
 end
 
+---------------------------------------------------------------------
+-- 📊 UQiLL PERFORMANCE HUD (FPS | PING | MEMORY)
+-- Draggable | Toggleable | Clean & Lightweight
+---------------------------------------------------------------------
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+---------------------------------------------------------------------
+-- CONFIG
+---------------------------------------------------------------------
+local ICON_ID = "rbxassetid://130835920424032" -- GANTI dengan icon kamu
+
+---------------------------------------------------------------------
+-- STATE
+---------------------------------------------------------------------
+local HudState = {
+	Visible = false,
+	Dragging = false,
+	DragStart = Vector2.zero,
+	StartPos = UDim2.new(0, 20, 0, 140)
+}
+
+---------------------------------------------------------------------
+-- UI ROOT
+---------------------------------------------------------------------
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "UQiLL_PerformanceHUD"
+Gui.ResetOnSpawn = false
+Gui.Parent = PlayerGui
+Gui.Enabled = false
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.fromOffset(240, 100)
+Frame.Position = HudState.StartPos
+Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+Frame.BackgroundTransparency = 0.12
+Frame.BorderSizePixel = 0
+Frame.Parent = Gui
+
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
+
+---------------------------------------------------------------------
+-- HEADER
+---------------------------------------------------------------------
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 32)
+Header.BackgroundTransparency = 1
+Header.Parent = Frame
+
+-- Icon
+local Icon = Instance.new("ImageLabel")
+Icon.Size = UDim2.fromOffset(20, 20)
+Icon.Position = UDim2.fromOffset(10, 6)
+Icon.BackgroundTransparency = 1
+Icon.Image = ICON_ID
+Icon.Parent = Header
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Position = UDim2.fromOffset(36, 0)
+Title.Size = UDim2.new(1, -36, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "UQiLL Performance Monitoring"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 13
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Color3.fromRGB(170, 255, 170)
+Title.Parent = Header
+
+---------------------------------------------------------------------
+-- CONTENT
+---------------------------------------------------------------------
+local Content = Instance.new("TextLabel")
+Content.Position = UDim2.fromOffset(12, 36)
+Content.Size = UDim2.new(1, -24, 1, -40)
+Content.BackgroundTransparency = 1
+Content.TextXAlignment = Enum.TextXAlignment.Left
+Content.TextYAlignment = Enum.TextYAlignment.Top
+
+Content.Font = Enum.Font.Gotham
+Content.TextSize = 13
+Content.TextColor3 = Color3.fromRGB(230, 230, 230)
+Content.TextWrapped = true
+Content.Text = "Loading..."
+Content.Parent = Frame
+
+---------------------------------------------------------------------
+-- DRAG HANDLER (HEADER ONLY)
+---------------------------------------------------------------------
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		HudState.Dragging = true
+		HudState.DragStart = input.Position
+		HudState.StartPos = Frame.Position
+	end
+end)
+
+Header.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		HudState.Dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if HudState.Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - HudState.DragStart
+		Frame.Position = UDim2.new(
+			HudState.StartPos.X.Scale,
+			HudState.StartPos.X.Offset + delta.X,
+			HudState.StartPos.Y.Scale,
+			HudState.StartPos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+---------------------------------------------------------------------
+-- FPS CALCULATION
+---------------------------------------------------------------------
+local fps = 0
+local frameCount = 0
+local lastTick = os.clock()
+
+RunService.RenderStepped:Connect(function()
+	frameCount = frameCount + 1
+	local now = os.clock()
+
+	if now - lastTick >= 1 then
+		fps = frameCount
+		frameCount = 0
+		lastTick = now
+	end
+end)
+
+---------------------------------------------------------------------
+-- UPDATE LOOP (LOW COST)
+---------------------------------------------------------------------
+task.spawn(function()
+	while true do
+		if HudState.Visible then
+			local ping = 0
+			pcall(function()
+				ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+			end)
+
+			local memory = math.floor(Stats:GetTotalMemoryUsageMb())
+
+			Content.Text = string.format(
+				"FPS    : %d\nPing   : %d ms\nMemory : %d MB",
+				fps,
+				ping,
+				memory
+			)
+		end
+		task.wait(0.5)
+	end
+end)
+
+---------------------------------------------------------------------
+-- PUBLIC API (TOGGLE SAFE)
+---------------------------------------------------------------------
+function TogglePerformanceHUD(state)
+	HudState.Visible = state
+	Gui.Enabled = state
+end
+
 
 -- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
@@ -1900,6 +2071,144 @@ local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Autho
 Window.Name = GUI_NAMES.Main 
 Window:Tag({ Title = "v.4.3.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
+Window:EditOpenButton({
+    Enabled = false,
+})
+
+-------------------------------------------------
+-- FLOATING TOGGLE BUTTON (WIND UI OVERRIDE)
+-------------------------------------------------
+local CoreGui = game:GetService("CoreGui")
+local UIS = game:GetService("UserInputService")
+
+-- Cleanup old button
+local old = CoreGui:FindFirstChild(GUI_NAMES.Mobile)
+if old then old:Destroy() end
+
+-- ScreenGui
+local Gui = Instance.new("ScreenGui")
+Gui.Name = GUI_NAMES.Mobile
+Gui.ResetOnSpawn = false
+Gui.Parent = CoreGui
+
+-- Button (Image)
+local Button = Instance.new("ImageButton")
+Button.Size = UDim2.fromOffset(52, 52)
+Button.Position = UDim2.fromScale(0.05, 0.5)
+Button.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Button.BackgroundTransparency = 0.1
+Button.AutoButtonColor = false
+Button.BorderSizePixel = 0
+
+-- TODO: ganti ID ini dengan image kamu
+Button.Image = "rbxassetid://130835920424032"
+Button.ImageTransparency = 0
+Button.ScaleType = Enum.ScaleType.Fit
+
+Button.Parent = Gui
+
+-- Rounded
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(1, 0)
+Corner.Parent = Button
+
+-- Neon Border (white)
+local Stroke = Instance.new("UIStroke")
+Stroke.Thickness = 1.6
+Stroke.Color = Color3.fromRGB(255, 255, 255)
+Stroke.Transparency = 0.05
+Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+Stroke.Parent = Button
+
+-- Soft glow layer (optional but makes it "neon")
+local Glow = Instance.new("UIStroke")
+Glow.Thickness = 4
+Glow.Color = Color3.fromRGB(255, 255, 255)
+Glow.Transparency = 0.78
+Glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+Glow.Parent = Button
+
+-- UI Style
+local Corner = Instance.new("UICorner", Button)
+Corner.CornerRadius = UDim.new(1, 0)
+
+local Stroke = Instance.new("UIStroke", Button)
+Stroke.Thickness = 1.2
+Stroke.Color = Color3.fromRGB(0, 255, 140)
+Stroke.Transparency = 0.2
+
+-------------------------------------------------
+-- TOGGLE LOGIC
+-------------------------------------------------
+local visible = true
+
+Button.MouseButton1Click:Connect(function()
+    visible = not visible
+    pcall(function()
+        Window:Toggle(visible)
+    end)
+end)
+
+-------------------------------------------------
+-- SMOOTH DRAG SYSTEM (FIXED & REALISTIC)
+-------------------------------------------------
+
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local dragging = false
+local dragOffset = Vector2.zero
+
+-- clamp ke layar
+local function ClampToScreen(pos)
+    local cam = workspace.CurrentCamera
+    if not cam then return pos end
+
+    local viewport = cam.ViewportSize
+    local size = Button.AbsoluteSize
+
+    return Vector2.new(
+        math.clamp(pos.X, 0, viewport.X - size.X),
+        math.clamp(pos.Y, 0, viewport.Y - size.Y)
+    )
+end
+
+-- begin drag
+Button.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+
+        -- offset antara kursor & button
+        local mousePos = UIS:GetMouseLocation()
+        local btnPos = Button.AbsolutePosition
+
+        dragOffset = mousePos - btnPos
+
+        -- stop drag
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+-- update per frame
+RunService.RenderStepped:Connect(function()
+    if not dragging then return end
+
+    local mousePos = UIS:GetMouseLocation()
+    local targetPos = mousePos - dragOffset
+    local clamped = ClampToScreen(targetPos)
+
+    Button.Position = UDim2.fromOffset(
+        clamped.X,
+        clamped.Y
+    )
+end)
+
 
 local TabPlayer = Window:Tab({ Title = "Player Setting", Icon = "user" })
 local TabFishing = Window:Tab({ Title = "Auto Fishing", Icon = "fish" })
@@ -1911,8 +2220,8 @@ local TabWebHook = Window:Tab({ Title = "Webhook", Icon = "webhook" })
 local TabSettings = Window:Tab({ Title = "Settings", Icon = "settings" })
 
 -- [[ TAB PLAYER: UTILITIES ]]
-TabPlayer:Section({ Title = "Hide Name" })
-TabPlayer:Input({
+local sectionHideName = TabPlayer:Section({ Title = "Hide Name", Opened = false})
+sectionHideName:Input({
 	Title = "Fake Player Name",
 	Desc = "Visual only (level safe)",
 	Placeholder = "Input fake name",
@@ -1921,7 +2230,7 @@ TabPlayer:Input({
 	end
 })
 
-TabPlayer:Toggle({
+sectionHideName:Toggle({
 	Title = "Spoof Player Name",
 	Desc = "Only name, level untouched",
 	Icon = "user-check",
@@ -1952,13 +2261,13 @@ TabPlayer:Toggle({
 -- })
 
 
-TabPlayer:Section({ Title = "Players Feature" })
-TabPlayer:Toggle({ Title = "Walk on Water", Desc = "Creates a platform below you", Icon = "waves", Value = false, Callback = function(state) ToggleWaterWalk(state); WindUI:Notify({Title = "Movement", Content = state and "Water Walk ON" or "Water Walk OFF", Duration = 2}) end })
-TabPlayer:Toggle({ Title = "Disable Animation", Desc = "Stop character anims (T-Pose)", Icon = "user-x", Value = false, Callback = function(state) ToggleAnims(state); WindUI:Notify({Title = "Player", Content = state and "Animations Disabled" or "Animations Enabled", Duration = 2}) end })
+local sectionPlayerFeature = TabPlayer:Section({ Title = "Players Feature", Opened = false})
+sectionPlayerFeature:Toggle({ Title = "Walk on Water", Desc = "Creates a platform below you", Icon = "waves", Value = false, Callback = function(state) ToggleWaterWalk(state); WindUI:Notify({Title = "Movement", Content = state and "Water Walk ON" or "Water Walk OFF", Duration = 2}) end })
+sectionPlayerFeature:Toggle({ Title = "Disable Animation", Desc = "Stop character anims (T-Pose)", Icon = "user-x", Value = false, Callback = function(state) ToggleAnims(state); WindUI:Notify({Title = "Player", Content = state and "Animations Disabled" or "Animations Enabled", Duration = 2}) end })
 
-TabPlayer:Section({ Title = "Equipment" })
-TabPlayer:Toggle({ Title = "Equip Diving Gear", Desc = "Toggle Oxygen Tank (105)", Icon = "anchor", Value = false, Callback = function(state) if state then pcall(function() EquipTank:InvokeServer(105) end); WindUI:Notify({Title = "Item", Content = "Diving Gear Equipped", Duration = 2}) else local Char = Players.LocalPlayer.Character; local Backpack = Players.LocalPlayer.Backpack; if Char then for _, t in pairs(Char:GetChildren()) do if t:IsA("Tool") and (string.find(t.Name, "Oxygen") or string.find(t.Name, "Tank") or string.find(t.Name, "Diving")) then t.Parent = Backpack end end end; WindUI:Notify({Title = "Item", Content = "Diving Gear Unequipped", Duration = 2}) end end })
-TabPlayer:Toggle({ Title = "Equip Radar", Desc = "Toggle Fishing Radar", Icon = "radar", Value = false, Callback = function(state) pcall(function() UpdateRadar:InvokeServer(state) end); WindUI:Notify({Title = "Item", Content = state and "Radar ON" or "Radar OFF", Duration = 2}) end })
+local sectionPlayerEquipment = TabPlayer:Section({ Title = "Equipment", Opened = false})
+sectionPlayerEquipment:Toggle({ Title = "Equip Diving Gear", Desc = "Toggle Oxygen Tank (105)", Icon = "anchor", Value = false, Callback = function(state) if state then pcall(function() EquipTank:InvokeServer(105) end); WindUI:Notify({Title = "Item", Content = "Diving Gear Equipped", Duration = 2}) else local Char = Players.LocalPlayer.Character; local Backpack = Players.LocalPlayer.Backpack; if Char then for _, t in pairs(Char:GetChildren()) do if t:IsA("Tool") and (string.find(t.Name, "Oxygen") or string.find(t.Name, "Tank") or string.find(t.Name, "Diving")) then t.Parent = Backpack end end end; WindUI:Notify({Title = "Item", Content = "Diving Gear Unequipped", Duration = 2}) end end })
+sectionPlayerEquipment:Toggle({ Title = "Equip Radar", Desc = "Toggle Fishing Radar", Icon = "radar", Value = false, Callback = function(state) pcall(function() UpdateRadar:InvokeServer(state) end); WindUI:Notify({Title = "Item", Content = state and "Radar ON" or "Radar OFF", Duration = 2}) end })
 
 -- [[ TAB 1: FISHING ]]
 
@@ -2148,13 +2457,13 @@ TabWeather:Dropdown({ Title = "Select Weather(s)", Desc = "Choose multiple weath
 TabWeather:Toggle({ Title = "Smart Monitor", Desc = "Checks every 15s", Icon = "cloud-lightning", Value = false, Callback = function(state) SettingsState.AutoWeather.Active = state; if state then StartAutoWeather(); WindUI:Notify({Title = "Weather", Content = "Monitor Started", Duration = 2}) else StopAutoWeather() WindUI:Notify({Title = "Weather", Content = "Monitor Stopped", Duration = 2}) end end })
 
 -- [[ TAB 4: TELEPORT ]]
-TabTeleport:Section({ Title = "Auto Event Limited" })
-local TimedLabel = TabTeleport:Paragraph({
+local sectionEventLimited = TabTeleport:Section({ Title = "Auto Event Limited", Openen = false })
+local TimedLabel = sectionEventLimited:Paragraph({
     Title = "Christmas Time",
     Desc = "Status: Off"
 })
 
-TabTeleport:Toggle({
+sectionEventLimited:Toggle({
     Title = "Auto Christmas Time",
     Icon = "clock",
     Value = false,
@@ -2163,9 +2472,9 @@ TabTeleport:Toggle({
     end
 })
 
-TabTeleport:Section({ Title = "Auto Event" })
+local sectionEAutoEvent = TabTeleport:Section({ Title = "Auto Event", Openen = false})
 
-local AutoEventDropdown = TabTeleport:Dropdown({
+local AutoEventDropdown = sectionEAutoEvent:Dropdown({
 	Title = "Choose Event",
 	Values = GetAvailableAutoEvents(),
 	Value = nil,
@@ -2176,7 +2485,7 @@ local AutoEventDropdown = TabTeleport:Dropdown({
 	end
 })
 
-TabTeleport:Button({
+sectionEAutoEvent:Button({
 	Title = "Refresh Event List",
 	Icon = "refresh-cw",
 	Callback = function()
@@ -2190,7 +2499,7 @@ TabTeleport:Button({
 	end
 })
 
-TabTeleport:Toggle({
+sectionEAutoEvent:Toggle({
 	Title = "Auto Event",
 	Icon = "zap",
 	Value = false,
@@ -2203,7 +2512,7 @@ TabTeleport:Toggle({
 	end
 })
 
-TabTeleport:Button({
+sectionEAutoEvent:Button({
 	Title = "Teleport to Event (Manual)",
 	Icon = "navigation",
 	Callback = function()
@@ -2217,26 +2526,26 @@ TabTeleport:Button({
 })
 
 
-TabTeleport:Section({ Title = "Islands" }) 
-local TP_Dropdown = TabTeleport:Dropdown({ Title = "Select Island", Values = zoneNames, Value = zoneNames[1] or "Select", Callback = function(val) selectedZone = val end })
-TabTeleport:Button({ Title = "Teleport to Island", Icon = "navigation", Callback = function() if selectedZone and Waypoints[selectedZone] then TeleportTo(Waypoints[selectedZone]) else WindUI:Notify({Title = "Error", Content = "Coordinates missing", Duration = 2}) end end })
-TabTeleport:Button({ Title = "Refresh List", Icon = "refresh-cw", Callback = function() WindUI:Notify({Title = "System", Content = "Static list reloaded", Duration = 1}) end })
+local sectionTPIsland = TabTeleport:Section({ Title = "Islands" }) 
+local TP_Dropdown = sectionTPIsland:Dropdown({ Title = "Select Island", Values = zoneNames, Value = zoneNames[1] or "Select", Callback = function(val) selectedZone = val end })
+sectionTPIsland:Button({ Title = "Teleport to Island", Icon = "navigation", Callback = function() if selectedZone and Waypoints[selectedZone] then TeleportTo(Waypoints[selectedZone]) else WindUI:Notify({Title = "Error", Content = "Coordinates missing", Duration = 2}) end end })
+sectionTPIsland:Button({ Title = "Refresh List", Icon = "refresh-cw", Callback = function() WindUI:Notify({Title = "System", Content = "Static list reloaded", Duration = 1}) end })
 
-TabTeleport:Section({ Title = "Player Teleport" })
+local sectionTPPlayer = TabTeleport:Section({ Title = "Player Teleport" })
 local targetPlayerName = ""
 local playerNames = GetPlayerList()
-local PlayerDropdown = TabTeleport:Dropdown({ Title = "Select Player", Values = playerNames, Value = playerNames[1] or "None", Callback = function(val) targetPlayerName = val end })
-TabTeleport:Button({ Title = "Teleport to Player", Icon = "user", Callback = function() local target = FindPlayer(targetPlayerName); if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then TeleportTo(target.Character.HumanoidRootPart.Position + Vector3.new(3, 0, 0)); WindUI:Notify({Title = "Teleport", Content = "Warped to " .. target.Name, Duration = 2}) else WindUI:Notify({Title = "Error", Content = "Player not found!", Duration = 2}) end end })
-TabTeleport:Button({ Title = "Refresh Players", Desc = "Update list", Icon = "refresh-cw", Callback = function() local newPlayers = GetPlayerList(); PlayerDropdown:Refresh(newPlayers, newPlayers[1] or "None"); WindUI:Notify({Title = "System", Content = "List updated!", Duration = 2}) end })
+local PlayerDropdown = sectionTPPlayer:Dropdown({ Title = "Select Player", Values = playerNames, Value = playerNames[1] or "None", Callback = function(val) targetPlayerName = val end })
+sectionTPPlayer:Button({ Title = "Teleport to Player", Icon = "user", Callback = function() local target = FindPlayer(targetPlayerName); if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then TeleportTo(target.Character.HumanoidRootPart.Position + Vector3.new(3, 0, 0)); WindUI:Notify({Title = "Teleport", Content = "Warped to " .. target.Name, Duration = 2}) else WindUI:Notify({Title = "Error", Content = "Player not found!", Duration = 2}) end end })
+sectionTPPlayer:Button({ Title = "Refresh Players", Desc = "Update list", Icon = "refresh-cw", Callback = function() local newPlayers = GetPlayerList(); PlayerDropdown:Refresh(newPlayers, newPlayers[1] or "None"); WindUI:Notify({Title = "System", Content = "List updated!", Duration = 2}) end })
 
-TabTeleport:Section({ Title = "Coordinate Tools" })
-LivePosToggle = TabTeleport:Toggle({ Title = "Show Live Pos", Desc = "Click to show coordinates", Icon = "monitor", Value = false, Callback = function(state) TogglePosWatcher(state) end })
-TabTeleport:Button({ Title = "Copy Position", Desc = "Copy 'Vector3.new(...)'", Icon = "copy", Callback = function() local Char = Players.LocalPlayer.Character; if Char and Char:FindFirstChild("HumanoidRootPart") then local pos = Char.HumanoidRootPart.Position; local str = string.format("Vector3.new(%.0f, %.0f, %.0f)", pos.X, pos.Y, pos.Z); if setclipboard then setclipboard(str); WindUI:Notify({Title = "Copied!", Content = "Saved", Duration = 2}) else print("📍 COPIED: " .. str); WindUI:Notify({Title = "Error", Content = "Check F9", Duration = 2}) end end end })
+local sectionCoordinateTools = TabTeleport:Section({ Title = "Coordinate Tools" })
+LivePosToggle = sectionCoordinateTools:Toggle({ Title = "Show Live Pos", Desc = "Click to show coordinates", Icon = "monitor", Value = false, Callback = function(state) TogglePosWatcher(state) end })
+sectionCoordinateTools:Button({ Title = "Copy Position", Desc = "Copy 'Vector3.new(...)'", Icon = "copy", Callback = function() local Char = Players.LocalPlayer.Character; if Char and Char:FindFirstChild("HumanoidRootPart") then local pos = Char.HumanoidRootPart.Position; local str = string.format("Vector3.new(%.0f, %.0f, %.0f)", pos.X, pos.Y, pos.Z); if setclipboard then setclipboard(str); WindUI:Notify({Title = "Copied!", Content = "Saved", Duration = 2}) else print("📍 COPIED: " .. str); WindUI:Notify({Title = "Error", Content = "Check F9", Duration = 2}) end end end })
 
 
 -- [[ TAB 5: SETTINGS ]]
-TabSettings:Section({ Title = "Server" })
-TabSettings:Button({ 
+local sectionServer = TabSettings:Section({ Title = "Server" })
+sectionServer:Button({ 
     Title = "Server Hop (Low Player)", 
     Desc = "Find server with space", 
     Icon = "server", 
@@ -2263,7 +2572,7 @@ TabSettings:Button({
     end 
 })
 
-TabSettings:Button({
+sectionServer:Button({
     Title = "Rejoin Game (Auto-Exec)",
     Desc = "Rejoin & Run Script",
     Icon = "rotate-cw",
@@ -2282,13 +2591,13 @@ TabSettings:Button({
     end
 })
 
-TabSettings:Section({Title = "Optimization"})
-TabSettings:Button(
+local sectionOptimization = TabSettings:Section({Title = "Optimization"})
+sectionOptimization:Button(
     {Title = "Anti-AFK", Desc = "Status: Active (Always On)", Icon = "clock", Callback = function()
             WindUI:Notify({Title = "Anti-AFK", Content = "Permanently Active", Duration = 2})
         end}
 )
-TabSettings:Button(
+sectionOptimization:Button(
     {
         Title = "Destroy Fish Popup",
         Desc = "Permanently removes 'Small Notification' UI",
@@ -2304,13 +2613,13 @@ TabSettings:Button(
         end
     }
 )
-TabSettings:Toggle(
+sectionOptimization:Toggle(
     {Title = "FPS Boost (Potato)", Desc = "Low Graphics", Icon = "monitor", Value = false, Callback = function(state)
             ToggleFPSBoost(state)
         end}
 )
 
-TabSettings:Toggle({
+sectionOptimization:Toggle({
     Title = "Remove VFX",
     Icon = "trash",
     Value = false,
@@ -2324,6 +2633,18 @@ TabSettings:Toggle({
         end
     end
 })
+
+local sectionMonitoring = TabSettings:Section({ Title = "Monitoring" })
+sectionMonitoring:Toggle({
+	Title = "Performance HUD",
+	Desc = "FPS / Ping / Memory",
+	Icon = "monitor",
+	Value = false,
+	Callback = function(state)
+		TogglePerformanceHUD(state)
+	end
+})
+
 
 -- TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
 local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret",}
