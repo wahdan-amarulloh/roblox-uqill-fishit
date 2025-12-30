@@ -2038,6 +2038,32 @@ function TogglePerformanceHUD(state)
 	Gui.Enabled = state
 end
 
+-------------------------------------------------
+-- NO 3D RENDERING (EXECUTOR ONLY)
+-------------------------------------------------
+
+local RunService = game:GetService("RunService")
+
+local NoRender3D = {
+    Active = false,
+    Supported = typeof(RunService.Set3dRenderingEnabled) == "function"
+}
+
+function NoRender3D:Enable()
+    if self.Active or not self.Supported then return end
+    pcall(function()
+        RunService:Set3dRenderingEnabled(false)
+    end)
+    self.Active = true
+end
+
+function NoRender3D:Disable()
+    if not self.Active or not self.Supported then return end
+    pcall(function()
+        RunService:Set3dRenderingEnabled(true)
+    end)
+    self.Active = false
+end
 
 -- =====================================================
 -- 🎨 BAGIAN 8: WIND UI SETUP
@@ -2069,7 +2095,7 @@ end
 
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.3.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.4.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 Window:EditOpenButton({
     Enabled = false,
@@ -2633,6 +2659,40 @@ sectionOptimization:Toggle({
         end
     end
 })
+
+sectionOptimization:Toggle({
+    Title = "No 3D Rendering",
+    Desc = "Disable world rendering (extreme FPS boost)",
+    Icon = "eye-off",
+    Value = false,
+    Callback = function(state)
+        if not NoRender3D.Supported then
+            WindUI:Notify({
+                Title = "Not Supported",
+                Content = "Executor tidak mendukung 3D rendering control",
+                Duration = 3
+            })
+            return
+        end
+
+        if state then
+            NoRender3D:Enable()
+            WindUI:Notify({
+                Title = "Performance",
+                Content = "3D Rendering Disabled",
+                Duration = 2
+            })
+        else
+            NoRender3D:Disable()
+            WindUI:Notify({
+                Title = "Performance",
+                Content = "3D Rendering Restored",
+                Duration = 2
+            })
+        end
+    end
+})
+
 
 local sectionMonitoring = TabSettings:Section({ Title = "Monitoring" })
 sectionMonitoring:Toggle({
