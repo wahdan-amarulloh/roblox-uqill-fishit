@@ -240,38 +240,49 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 -- Duration: 30 Minutes
 -- Includes: Countdown MM:SS UI
 ---------------------------------------------------------------------
-
+----------------------------------------------------------------
+ -- SERVICES
+ ----------------------------------------------------------------
+ local RunService = game:GetService("RunService")
+ local Players = game:GetService("Players")
+ local LP = Players.LocalPlayer
+ ----------------------------------------------------------------
+ -- CONFIG
+ ----------------------------------------------------------------
+ local EVENT_HOURS = {
+     [0]=true,[2]=true,[4]=true,[6]=true,
+     [8]=true,[10]=true,[12]=true,
+     [14]=true,[16]=true,[18]=true,
+     [20]=true,[22]=true,
+ }
+ local EVENT_DURATION = 29 * 60 -- 30 menit
+ local TARGET_POS = Vector3.new(715, -487, 8910)
+ ----------------------------------------------------------------
+ -- INTERNAL STATE
+ ----------------------------------------------------------------
+ local running = false
+ local active = false
+ local eventStartUTC = 0
+ local savedPos = nil
+ local uiConn = nil
+ ----------------------------------------------------------------
+ -- TELEPORT UTILS
+ ----------------------------------------------------------------
+ local function HRP()
+     local c = LP.Character
+     return c and c:FindFirstChild("HumanoidRootPart")
+ end
+ local function SafeTP(pos)
+     for _ = 1, 5 do
+         local hrp = HRP()
+         if hrp then
+             hrp.AssemblyLinearVelocity = Vector3.zero
+             hrp.CFrame = CFrame.new(pos)
+         end
+         task.wait(0.08)
+     end
+ end
 do
-    ----------------------------------------------------------------
-    -- SERVICES
-    ----------------------------------------------------------------
-    local RunService = game:GetService("RunService")
-    local Players = game:GetService("Players")
-    local LP = Players.LocalPlayer
-
-    ----------------------------------------------------------------
-    -- CONFIG
-    ----------------------------------------------------------------
-    local EVENT_HOURS = {
-        [0]=true,[2]=true,[4]=true,[6]=true,
-        [8]=true,[10]=true,[12]=true,
-        [14]=true,[16]=true,[18]=true,
-        [20]=true,[22]=true,
-    }
-
-
-    local EVENT_DURATION = 29 * 60 -- 30 menit
-    local TARGET_POS = Vector3.new(715, -487, 8910)
-
-    ----------------------------------------------------------------
-    -- INTERNAL STATE
-    ----------------------------------------------------------------
-    local running = false
-    local active = false
-    local eventStartUTC = 0
-    local savedPos = nil
-    local uiConn = nil
-
     ----------------------------------------------------------------
     -- TIME HELPERS (UTC SAFE)
     ----------------------------------------------------------------
@@ -326,26 +337,6 @@ do
 
         return nearest
     end
-
-    ----------------------------------------------------------------
-    -- TELEPORT UTILS
-    ----------------------------------------------------------------
-    local function HRP()
-        local c = LP.Character
-        return c and c:FindFirstChild("HumanoidRootPart")
-    end
-
-    local function SafeTP(pos)
-        for _ = 1, 5 do
-            local hrp = HRP()
-            if hrp then
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.CFrame = CFrame.new(pos)
-            end
-            task.wait(0.08)
-        end
-    end
-
     ----------------------------------------------------------------
     -- PUBLIC FUNCTION
     ----------------------------------------------------------------
@@ -723,22 +714,134 @@ local function ToggleFPSBoost(state)
     end
 end
 
-local function ExecuteRemoveVFX()
-    local function KillVFX(obj)
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
-            obj.Enabled = false
-            obj.Transparency = NumberSequence.new(1)
-        elseif obj:IsA("Explosion") then obj.Visible = false end
+-- local function ExecuteRemoveVFX()
+--     local function KillVFX(obj)
+--         if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+--             obj.Enabled = false
+--             obj.Transparency = NumberSequence.new(1)
+--         elseif obj:IsA("Explosion") then obj.Visible = false end
+--     end
+--     for _, v in pairs(game:GetDescendants()) do pcall(function() KillVFX(v) end) end
+--     workspace.DescendantAdded:Connect(function(child)
+--         task.wait()
+--         pcall(function() 
+--             KillVFX(child) 
+--             for _, gc in pairs(child:GetDescendants()) do KillVFX(gc) end 
+--         end)
+--     end)
+-- end
+
+---------------------------------------------------------------------
+-- DISABLE DIVE & THROW VFX (FINAL FIX)
+-- Reason: VFX depth is NOT flat → must scan ancestors
+---------------------------------------------------------------------
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VFXFolder = ReplicatedStorage:FindFirstChild("VFX")
+
+local DiveThrowVFX = {
+    Active = false,
+    Connections = {}
+}
+
+---------------------------------------------------------------------
+-- Utility: check ancestor chain
+---------------------------------------------------------------------
+local function HasDiveOrThrowAncestor(instance)
+    local current = instance
+
+    while current and current ~= VFXFolder do
+        if type(current.Name) == "string" then
+            if string.find(current.Name, "Dive")
+            or string.find(current.Name, "Throw") then
+                return true
+            end
+        end
+        current = current.Parent
     end
-    for _, v in pairs(game:GetDescendants()) do pcall(function() KillVFX(v) end) end
-    workspace.DescendantAdded:Connect(function(child)
-        task.wait()
-        pcall(function() 
-            KillVFX(child) 
-            for _, gc in pairs(child:GetDescendants()) do KillVFX(gc) end 
-        end)
-    end)
+
+    return false
 end
+
+---------------------------------------------------------------------
+-- Utility: disable visuals
+---------------------------------------------------------------------
+local function DisableVisual(obj)
+    if obj:IsA("ParticleEmitter") then
+        obj.Enabled = false
+        obj.Transparency = NumberSequence.new(1)
+
+    elseif obj:IsA("Trail") or obj:IsA("Beam") then
+        obj.Enabled = false
+
+    elseif obj:IsA("Explosion") then
+        obj.Visible = false
+    end
+end
+
+---------------------------------------------------------------------
+-- Utility: restore visuals
+---------------------------------------------------------------------
+local function RestoreVisual(obj)
+    if obj:IsA("ParticleEmitter") then
+        obj.Enabled = true
+        obj.Transparency = NumberSequence.new(0)
+
+    elseif obj:IsA("Trail") or obj:IsA("Beam") then
+        obj.Enabled = true
+
+    elseif obj:IsA("Explosion") then
+        obj.Visible = true
+    end
+end
+
+---------------------------------------------------------------------
+-- Apply handler to matching VFX only
+---------------------------------------------------------------------
+local function Apply(handler)
+    for _, obj in ipairs(VFXFolder:GetDescendants()) do
+        if HasDiveOrThrowAncestor(obj) then
+            handler(obj)
+        end
+    end
+end
+
+---------------------------------------------------------------------
+-- ENABLE
+---------------------------------------------------------------------
+function EnableDiveThrowVFX()
+    if DiveThrowVFX.Active or not VFXFolder then return end
+    DiveThrowVFX.Active = true
+
+    -- Existing
+    Apply(DisableVisual)
+
+    -- Future spawned
+    DiveThrowVFX.Connections[#DiveThrowVFX.Connections + 1] =
+        VFXFolder.DescendantAdded:Connect(function(child)
+            task.wait()
+            if DiveThrowVFX.Active and HasDiveOrThrowAncestor(child) then
+                DisableVisual(child)
+            end
+        end)
+end
+
+---------------------------------------------------------------------
+-- DISABLE / RESTORE
+---------------------------------------------------------------------
+function DisableDiveThrowVFX()
+    if not DiveThrowVFX.Active or not VFXFolder then return end
+    DiveThrowVFX.Active = false
+
+    Apply(RestoreVisual)
+
+    for _, conn in ipairs(DiveThrowVFX.Connections) do
+        conn:Disconnect()
+    end
+    table.clear(DiveThrowVFX.Connections)
+end
+
+
 
 local function ExecuteDestroyPopup()
     local target = PlayerGui:FindFirstChild("Small Notification")
@@ -766,35 +869,74 @@ local function StartAntiAFK()
     end)
 end
 
+-- ============================================
+-- WALK ON WATER (STABLE / NO RAYCAST)
+-- ============================================
+
+local WATER_Y_LEVEL = nil
+local WATER_OFFSET = 0.1 -- tinggi berdiri di atas air
+
+local function DetectWaterLevel(hrp)
+    -- asumsi: player mengaktifkan saat dekat / di atas air
+    return hrp.Position.Y - 2
+end
+
 local function ToggleWaterWalk(state)
+    SettingsState.WaterWalk.Active = state
+
     if state then
-        local p = Instance.new("Part")
-        p.Name = "UQiLL_WaterPlatform"
-        p.Anchored = true
-        p.CanCollide = true
-        p.Transparency = 1
-        p.Size = Vector3.new(15, 1, 15)
-        p.Parent = Workspace
-        SettingsState.WaterWalk.Part = p
+        if SettingsState.WaterWalk.Part then return end
+
+        local char = Players.LocalPlayer.Character
+        if not char then return end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        -- DETECT WATER LEVEL ONCE
+        WATER_Y_LEVEL = DetectWaterLevel(hrp)
+
+        local platform = Instance.new("Part")
+        platform.Name = "UQiLL_WaterPlatform"
+        platform.Size = Vector3.new(18, 1, 18)
+        platform.Anchored = true
+        platform.CanCollide = true
+        platform.Transparency = 1
+        platform.Material = Enum.Material.SmoothPlastic
+        platform.Parent = Workspace
+
+        SettingsState.WaterWalk.Part = platform
 
         SettingsState.WaterWalk.Connection = RunService.Heartbeat:Connect(function()
-            local Char = Players.LocalPlayer.Character
-            if Char and Char:FindFirstChild("HumanoidRootPart") and SettingsState.WaterWalk.Part then
-                local hrpPos = Char.HumanoidRootPart.Position
-                SettingsState.WaterWalk.Part.CFrame = CFrame.new(hrpPos.X, -3.1, hrpPos.Z)
-            end
+            local charNow = Players.LocalPlayer.Character
+            if not charNow then return end
+
+            local hrpNow = charNow:FindFirstChild("HumanoidRootPart")
+            if not hrpNow then return end
+
+            -- Y DIKUNCI, X/Z IKUT PLAYER
+            platform.CFrame = CFrame.new(
+                hrpNow.Position.X,
+                WATER_Y_LEVEL + WATER_OFFSET,
+                hrpNow.Position.Z
+            )
         end)
+
     else
-        if SettingsState.WaterWalk.Connection then 
-            SettingsState.WaterWalk.Connection:Disconnect() 
+        if SettingsState.WaterWalk.Connection then
+            SettingsState.WaterWalk.Connection:Disconnect()
             SettingsState.WaterWalk.Connection = nil
         end
-        if SettingsState.WaterWalk.Part then 
-            SettingsState.WaterWalk.Part:Destroy() 
+
+        if SettingsState.WaterWalk.Part then
+            SettingsState.WaterWalk.Part:Destroy()
             SettingsState.WaterWalk.Part = nil
         end
+
+        WATER_Y_LEVEL = nil
     end
 end
+
 
 local function ToggleAnims(state)
     SettingsState.AnimsDisabled.Active = state
@@ -1147,6 +1289,180 @@ local function DisableNameSpoof()
 	end
 
 	RestoreName()
+end
+
+---------------------------------------------------------------------
+-- AUTO EVENT PROPS (Workspace -> Props -> Event ONLY)
+-- STRICT, SAFE, NO NIL CALL
+---------------------------------------------------------------------
+do
+	local Workspace = game:GetService("Workspace")
+
+	-------------------------------------------------
+	-- STATE
+	-------------------------------------------------
+	local AutoPropsEvent = {
+		Enabled = false,
+		Active = false,
+		SavedPos = nil,
+		CurrentEvent = nil,
+		SelectedEvent = nil,
+		ConnAdd = nil,
+		ConnRemove = nil,
+	}
+
+	-------------------------------------------------
+	-- SAFE UTIL GUARD
+	-------------------------------------------------
+	local function _HRP()
+		if typeof(HRP) == "function" then
+			return HRP()
+		end
+	end
+
+	local function _SafeTP(pos)
+		if typeof(SafeTP) == "function" then
+			SafeTP(pos)
+		end
+	end
+
+	-------------------------------------------------
+	-- VALID PROPS CONTAINERS (Workspace only)
+	-------------------------------------------------
+	local function GetValidPropsContainers()
+		local containers = {}
+		for _, inst in ipairs(Workspace:GetChildren()) do
+			if inst.Name == "Props" and (inst:IsA("Folder") or inst:IsA("Model")) then
+				containers[#containers + 1] = inst
+			end
+		end
+		return containers
+	end
+
+	-------------------------------------------------
+	-- EVENT VALIDATION
+	-------------------------------------------------
+	local function IsEventNode(node)
+		if not AutoPropsEvent.SelectedEvent then return false end
+		if not node then return false end
+		if not (node:IsA("Model") or node:IsA("Folder")) then return false end
+		if not node.Parent or node.Parent.Name ~= "Props" then return false end
+		if node.Parent.Parent ~= Workspace then return false end
+
+		return node.Name == AutoPropsEvent.SelectedEvent
+	end
+
+	-------------------------------------------------
+	-- START / END
+	-------------------------------------------------
+	local function StartEvent(eventNode)
+		if AutoPropsEvent.Active then return end
+
+		local hrp = _HRP()
+		if not hrp then return end
+
+		AutoPropsEvent.Active = true
+		AutoPropsEvent.CurrentEvent = eventNode
+		AutoPropsEvent.SavedPos = hrp.Position
+
+		warn("[AutoEvent][START] ->", eventNode:GetFullName())
+		_SafeTP(eventNode:GetPivot().Position + Vector3.new(0, 2, 0))
+	end
+
+	local function EndEvent(eventNode)
+		if AutoPropsEvent.CurrentEvent ~= eventNode then return end
+
+		warn("[AutoEvent][END] ->", eventNode:GetFullName())
+
+		if AutoPropsEvent.SavedPos then
+			_SafeTP(AutoPropsEvent.SavedPos + Vector3.new(0, 2, 0))
+		end
+
+		AutoPropsEvent.Active = false
+		AutoPropsEvent.SavedPos = nil
+		AutoPropsEvent.CurrentEvent = nil
+	end
+
+	-------------------------------------------------
+	-- PUBLIC API
+	-------------------------------------------------
+	function SetAutoEventSelection(eventName)
+		AutoPropsEvent.SelectedEvent = eventName
+	end
+
+	function GetAvailableAutoEvents()
+		local found, list = {}, {}
+		for _, props in ipairs(GetValidPropsContainers()) do
+			for _, child in ipairs(props:GetChildren()) do
+				if (child:IsA("Model") or child:IsA("Folder")) and not found[child.Name] then
+					found[child.Name] = true
+					list[#list + 1] = child.Name
+				end
+			end
+		end
+		table.sort(list)
+		return list
+	end
+
+	function EnableAutoEventProps()
+		if AutoPropsEvent.Enabled then return end
+		if not AutoPropsEvent.SelectedEvent then return end
+
+		AutoPropsEvent.Enabled = true
+		warn("[AutoEvent] ENABLED")
+
+		-- scan existing
+		for _, props in ipairs(GetValidPropsContainers()) do
+			for _, child in ipairs(props:GetChildren()) do
+				if IsEventNode(child) then
+					StartEvent(child)
+				end
+			end
+		end
+
+		-- listen only valid containers
+		AutoPropsEvent.ConnAdd = Workspace.ChildAdded:Connect(function(container)
+			if container.Name ~= "Props" or container.Parent ~= Workspace then return end
+
+			container.ChildAdded:Connect(function(child)
+				if IsEventNode(child) then
+					StartEvent(child)
+				end
+			end)
+		end)
+
+		AutoPropsEvent.ConnRemove = Workspace.DescendantRemoving:Connect(function(inst)
+			if inst == AutoPropsEvent.CurrentEvent then
+				EndEvent(inst)
+			end
+		end)
+	end
+
+	function DisableAutoEventProps()
+		if not AutoPropsEvent.Enabled then return end
+
+		AutoPropsEvent.Enabled = false
+		if AutoPropsEvent.ConnAdd then AutoPropsEvent.ConnAdd:Disconnect() end
+		if AutoPropsEvent.ConnRemove then AutoPropsEvent.ConnRemove:Disconnect() end
+
+		AutoPropsEvent.Active = false
+		AutoPropsEvent.SavedPos = nil
+		AutoPropsEvent.CurrentEvent = nil
+	end
+
+	function TeleportOnlyToEvent()
+		if not AutoPropsEvent.SelectedEvent then return false end
+
+		for _, props in ipairs(GetValidPropsContainers()) do
+			for _, child in ipairs(props:GetChildren()) do
+				if IsEventNode(child) then
+					_SafeTP(child:GetPivot().Position + Vector3.new(0, 2, 0))
+					return true
+				end
+			end
+		end
+		return false
+	end
 end
 
 -- -- =====================================================
@@ -1832,7 +2148,7 @@ TabWeather:Dropdown({ Title = "Select Weather(s)", Desc = "Choose multiple weath
 TabWeather:Toggle({ Title = "Smart Monitor", Desc = "Checks every 15s", Icon = "cloud-lightning", Value = false, Callback = function(state) SettingsState.AutoWeather.Active = state; if state then StartAutoWeather(); WindUI:Notify({Title = "Weather", Content = "Monitor Started", Duration = 2}) else StopAutoWeather() WindUI:Notify({Title = "Weather", Content = "Monitor Stopped", Duration = 2}) end end })
 
 -- [[ TAB 4: TELEPORT ]]
-TabTeleport:Section({ Title = "Auto Event" })
+TabTeleport:Section({ Title = "Auto Event Limited" })
 local TimedLabel = TabTeleport:Paragraph({
     Title = "Christmas Time",
     Desc = "Status: Off"
@@ -1840,7 +2156,6 @@ local TimedLabel = TabTeleport:Paragraph({
 
 TabTeleport:Toggle({
     Title = "Auto Christmas Time",
-    Desc = "Auto Join",
     Icon = "clock",
     Value = false,
     Callback = function(state)
@@ -1848,23 +2163,74 @@ TabTeleport:Toggle({
     end
 })
 
-TabTeleport:Button({ Title = "Teleport to Megalodon", Desc = "Auto find in '!!! MENU RINGS'", Icon = "skull", Callback = function() TeleportToMegalodon() end })
+TabTeleport:Section({ Title = "Auto Event" })
+
+local AutoEventDropdown = TabTeleport:Dropdown({
+	Title = "Choose Event",
+	Values = GetAvailableAutoEvents(),
+	Value = nil,
+	Multi = false,
+	AllowNone = false,
+	Callback = function(value)
+		SetAutoEventSelection(value)
+	end
+})
+
+TabTeleport:Button({
+	Title = "Refresh Event List",
+	Icon = "refresh-cw",
+	Callback = function()
+		local list = GetAvailableAutoEvents()
+		AutoEventDropdown:Refresh(list, list[1])
+		WindUI:Notify({
+			Title = "Auto Event",
+			Content = ("Found %d valid event(s)"):format(#list),
+			Duration = 2
+		})
+	end
+})
+
+TabTeleport:Toggle({
+	Title = "Auto Event",
+	Icon = "zap",
+	Value = false,
+	Callback = function(state)
+		if state then
+			EnableAutoEventProps()
+		else
+			DisableAutoEventProps()
+		end
+	end
+})
+
+TabTeleport:Button({
+	Title = "Teleport to Event (Manual)",
+	Icon = "navigation",
+	Callback = function()
+		local ok = TeleportOnlyToEvent()
+		WindUI:Notify({
+			Title = "Teleport",
+			Content = ok and "Teleported to chosen event" or "Chosen event is not active",
+			Duration = 2
+		})
+	end
+})
+
 
 TabTeleport:Section({ Title = "Islands" }) 
-local TP_Dropdown = TabTeleport:Dropdown({ Title = "Select Island", Desc = "Fixed GPS Coordinates", Values = zoneNames, Value = zoneNames[1] or "Select", Callback = function(val) selectedZone = val end })
-TabTeleport:Button({ Title = "Teleport to Island", Desc = "Warp to selected location", Icon = "navigation", Callback = function() if selectedZone and Waypoints[selectedZone] then TeleportTo(Waypoints[selectedZone]) else WindUI:Notify({Title = "Error", Content = "Coordinates missing", Duration = 2}) end end })
+local TP_Dropdown = TabTeleport:Dropdown({ Title = "Select Island", Values = zoneNames, Value = zoneNames[1] or "Select", Callback = function(val) selectedZone = val end })
+TabTeleport:Button({ Title = "Teleport to Island", Icon = "navigation", Callback = function() if selectedZone and Waypoints[selectedZone] then TeleportTo(Waypoints[selectedZone]) else WindUI:Notify({Title = "Error", Content = "Coordinates missing", Duration = 2}) end end })
 TabTeleport:Button({ Title = "Refresh List", Icon = "refresh-cw", Callback = function() WindUI:Notify({Title = "System", Content = "Static list reloaded", Duration = 1}) end })
 
 TabTeleport:Section({ Title = "Player Teleport" })
 local targetPlayerName = ""
 local playerNames = GetPlayerList()
-local PlayerDropdown = TabTeleport:Dropdown({ Title = "Select Player", Desc = "List of players in server", Values = playerNames, Value = playerNames[1] or "None", Callback = function(val) targetPlayerName = val end })
-TabTeleport:Button({ Title = "Teleport to Player", Desc = "Go to target player", Icon = "user", Callback = function() local target = FindPlayer(targetPlayerName); if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then TeleportTo(target.Character.HumanoidRootPart.Position + Vector3.new(3, 0, 0)); WindUI:Notify({Title = "Teleport", Content = "Warped to " .. target.Name, Duration = 2}) else WindUI:Notify({Title = "Error", Content = "Player not found!", Duration = 2}) end end })
+local PlayerDropdown = TabTeleport:Dropdown({ Title = "Select Player", Values = playerNames, Value = playerNames[1] or "None", Callback = function(val) targetPlayerName = val end })
+TabTeleport:Button({ Title = "Teleport to Player", Icon = "user", Callback = function() local target = FindPlayer(targetPlayerName); if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then TeleportTo(target.Character.HumanoidRootPart.Position + Vector3.new(3, 0, 0)); WindUI:Notify({Title = "Teleport", Content = "Warped to " .. target.Name, Duration = 2}) else WindUI:Notify({Title = "Error", Content = "Player not found!", Duration = 2}) end end })
 TabTeleport:Button({ Title = "Refresh Players", Desc = "Update list", Icon = "refresh-cw", Callback = function() local newPlayers = GetPlayerList(); PlayerDropdown:Refresh(newPlayers, newPlayers[1] or "None"); WindUI:Notify({Title = "System", Content = "List updated!", Duration = 2}) end })
 
 TabTeleport:Section({ Title = "Coordinate Tools" })
 LivePosToggle = TabTeleport:Toggle({ Title = "Show Live Pos", Desc = "Click to show coordinates", Icon = "monitor", Value = false, Callback = function(state) TogglePosWatcher(state) end })
-CoordDisplay = TabTeleport:Paragraph({ Title = "Current Position", Desc = "Status: Off" })
 TabTeleport:Button({ Title = "Copy Position", Desc = "Copy 'Vector3.new(...)'", Icon = "copy", Callback = function() local Char = Players.LocalPlayer.Character; if Char and Char:FindFirstChild("HumanoidRootPart") then local pos = Char.HumanoidRootPart.Position; local str = string.format("Vector3.new(%.0f, %.0f, %.0f)", pos.X, pos.Y, pos.Z); if setclipboard then setclipboard(str); WindUI:Notify({Title = "Copied!", Content = "Saved", Duration = 2}) else print("📍 COPIED: " .. str); WindUI:Notify({Title = "Error", Content = "Check F9", Duration = 2}) end end end })
 
 
@@ -1916,11 +2282,50 @@ TabSettings:Button({
     end
 })
 
-TabSettings:Section({ Title = "Optimization" })
-TabSettings:Button({ Title = "Anti-AFK", Desc = "Status: Active (Always On)", Icon = "clock", Callback = function() WindUI:Notify({ Title = "Anti-AFK", Content = "Permanently Active", Duration = 2 }) end })
-TabSettings:Button({ Title = "Destroy Fish Popup", Desc = "Permanently removes 'Small Notification' UI", Icon = "trash-2", Callback = function() if SettingsState.PopupDestroyed then WindUI:Notify({Title = "UI", Content = "Already Destroyed!", Duration = 2}) return end; SettingsState.PopupDestroyed = true; ExecuteDestroyPopup(); WindUI:Notify({Title = "UI", Content = "Popup Destroyed!", Duration = 3}) end })
-TabSettings:Toggle({ Title = "FPS Boost (Potato)", Desc = "Low Graphics", Icon = "monitor", Value = false, Callback = function(state) ToggleFPSBoost(state) end })
-TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
+TabSettings:Section({Title = "Optimization"})
+TabSettings:Button(
+    {Title = "Anti-AFK", Desc = "Status: Active (Always On)", Icon = "clock", Callback = function()
+            WindUI:Notify({Title = "Anti-AFK", Content = "Permanently Active", Duration = 2})
+        end}
+)
+TabSettings:Button(
+    {
+        Title = "Destroy Fish Popup",
+        Desc = "Permanently removes 'Small Notification' UI",
+        Icon = "trash-2",
+        Callback = function()
+            if SettingsState.PopupDestroyed then
+                WindUI:Notify({Title = "UI", Content = "Already Destroyed!", Duration = 2})
+                return
+            end
+            SettingsState.PopupDestroyed = true
+            ExecuteDestroyPopup()
+            WindUI:Notify({Title = "UI", Content = "Popup Destroyed!", Duration = 3})
+        end
+    }
+)
+TabSettings:Toggle(
+    {Title = "FPS Boost (Potato)", Desc = "Low Graphics", Icon = "monitor", Value = false, Callback = function(state)
+            ToggleFPSBoost(state)
+        end}
+)
+
+TabSettings:Toggle({
+    Title = "Remove VFX",
+    Icon = "trash",
+    Value = false,
+    Callback = function(state)
+        if state then
+            EnableDiveThrowVFX()
+            WindUI:Notify({Title = "Remove VFX", Duration = 2})
+        else
+            DisableDiveThrowVFX()
+            WindUI:Notify({Title = "Restore VFX", Duration = 2})
+        end
+    end
+})
+
+-- TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
 local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret",}
 
 TabFavorite:Dropdown({
