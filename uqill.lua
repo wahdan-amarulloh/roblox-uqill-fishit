@@ -458,50 +458,50 @@ local function TeleportTo(targetPos)
     end
 end
 
----------------------------------------------------------
--- AUTO WEATHER — ULTRA LIGHT (FINAL PATCH)
----------------------------------------------------------
+-- ---------------------------------------------------------
+-- -- AUTO WEATHER — ULTRA LIGHT (FINAL PATCH)
+-- ---------------------------------------------------------
 
-task.defer(function()
-    print("====== WEATHER SNIFFER ARMED v3 (SAFE) ======")
+-- task.defer(function()
+--     print("====== WEATHER SNIFFER ARMED v3 (SAFE) ======")
 
-    local RS = game:GetService("ReplicatedStorage")
-    local Replion = require(RS.Packages.Replion)
-    local Events = Replion.Client:WaitReplion("Events")
+--     local RS = game:GetService("ReplicatedStorage")
+--     local Replion = require(RS.Packages.Replion)
+--     local Events = Replion.Client:WaitReplion("Events")
 
-    -- Coba sekali Get("WeatherMachine")
-    local ok, result = pcall(function()
-        return Events:Get("WeatherMachine")
-    end)
+--     -- Coba sekali Get("WeatherMachine")
+--     local ok, result = pcall(function()
+--         return Events:Get("WeatherMachine")
+--     end)
 
-    print("[SNIFF] First WeatherMachine value =", ok and result or "ERROR:", result)
+--     print("[SNIFF] First WeatherMachine value =", ok and result or "ERROR:", result)
 
-    -- Start light polling
-    task.spawn(function()
-        local lastJson = ""
+--     -- Start light polling
+--     task.spawn(function()
+--         local lastJson = ""
 
-        while true do
-            task.wait(1)
+--         while true do
+--             task.wait(1)
 
-            local current = nil
-            local ok2, res2 = pcall(function()
-                return Events:Get("WeatherMachine")
-            end)
+--             local current = nil
+--             local ok2, res2 = pcall(function()
+--                 return Events:Get("WeatherMachine")
+--             end)
 
-            if ok2 then
-                current = res2
-            end
+--             if ok2 then
+--                 current = res2
+--             end
 
-            -- Convert ke string buat deteksi perubahan
-            local asJson = game:GetService("HttpService"):JSONEncode(current or {})
+--             -- Convert ke string buat deteksi perubahan
+--             local asJson = game:GetService("HttpService"):JSONEncode(current or {})
 
-            if asJson ~= lastJson then
-                warn("[SNIFF] WeatherMachine CHANGED →", current)
-                lastJson = asJson
-            end
-        end
-    end)
-end)
+--             if asJson ~= lastJson then
+--                 warn("[SNIFF] WeatherMachine CHANGED →", current)
+--                 lastJson = asJson
+--             end
+--         end
+--     end)
+-- end)
 -- ==========================================
 -- AUTO WEATHER v4 — Ultra Light + Stable
 -- ==========================================
@@ -641,6 +641,25 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     return oldNamecall(self, ...)
 end)
 
+-------------------------------------------------
+-- LIGHTWEIGHT SPAWN LIMITER
+-------------------------------------------------
+local MAX_PARALLEL = 4
+local active = 0
+
+local function lightSpawn(fn)
+    if active >= MAX_PARALLEL then
+        return -- DROP, bukan nunggu
+    end
+
+    active = active + 1
+    task.spawn(function()
+        pcall(fn)
+        active = active - 1
+    end)
+end
+
+
 
 local function startFishingLoop()
     local _Cancel = CancelInput
@@ -677,12 +696,17 @@ local function startFishingSuperInstantLoop()
         }
         game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/UpdateAutoFishingState"):InvokeServer(unpack(state))
     end
+    pcall(function() _Cancel:InvokeServer() end)
+    task.wait(0.055)
     while getgenv().fishingStart do
-        pcall(function() _Cancel:InvokeServer() end)
+
+        lightSpawn(function()
+            _Charge:InvokeServer()
+        end)
         task.wait(0.055)
-        task.spawn(function() pcall(function() _Charge:InvokeServer() end) end)
-        task.wait(0.055)
-        task.spawn(function() pcall(function() _Request:InvokeServer(unpack(args)) end) end)
+        lightSpawn(function()
+            _Request:InvokeServer(unpack(args))
+        end)
         task.wait(delayCharge) 
         pcall(function() _Complete:FireServer() end)
         task.wait(delayReset) 
@@ -2115,7 +2139,7 @@ end
 
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.5.0", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.5.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 Window:EditOpenButton({
     Enabled = false,
