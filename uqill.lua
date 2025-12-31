@@ -2386,20 +2386,20 @@ TabFishing:Input({
 
 TabFishing:Input({
     Title = "Reset Delay",
-    Value = "0.20",
+    Value = "0.35",
     Callback = function(text)
         if not text:match("^%d*%.?%d+$") then
-            delayReset = 0.2
-            return "0.2"
+            delayReset = 0.35
+            return "0.35"
         end
 
         local num = tonumber(text)
         if not num then
-            delayReset = 0.2
-            return "0.2"
+            delayReset = 0.35
+            return "0.35"
         end
 
-        delayReset = math.clamp(num, 0, 1)
+        delayReset = math.clamp(num, 0, 2)
         return tostring(delayReset)
     end
 })
