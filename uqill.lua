@@ -605,17 +605,14 @@ end
 -- 🎣 BAGIAN 5: LOGIKA FISHING (TURBO)
 -- =====================================================
 
--------------------------------------------------------
--- FISHING BLOCKER STATE
--------------------------------------------------------
 local FishingBlocker = {
     Enabled = false,
     AutoGreat = false,
 }
 
 -------------------------------------------------------
--- BUILTIN FISHING BLOCKER (TOGGLE AWARE)
--- Block only when Enabled == true
+-- BUILTIN FISHING BLOCKER (TOGGLE AWARE) - IMPROVED
+-- Strategy: Infinite Yield (Thread Freezing)
 -------------------------------------------------------
 
 local BLOCKED_REMOTES = {
@@ -629,17 +626,25 @@ local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
 
-    if FishingBlocker.Enabled
-        and (method == "InvokeServer" or method == "FireServer")
-        and BLOCKED_REMOTES[self]
-        and not checkcaller()
-    then
-        -- ⛔ block builtin auto only
-        return nil
+    -- Cek apakah blocker aktif, remote ada di daftar blacklist, DAN pemanggil BUKAN script kita (checkcaller false)
+    if FishingBlocker.Enabled and BLOCKED_REMOTES[self] and not checkcaller() then
+        
+        if method == "InvokeServer" then
+            -- TRIK RAHASIA: 
+            -- Jangan return nil. Tapi buat script game "Tidur" selamanya.
+            -- Jika script game menunggu disini, dia tidak akan pernah lanjut ke baris "Recovery" atau "Cancel".
+            return task.wait(9e9) 
+            
+        elseif method == "FireServer" then
+            -- Untuk FireServer, return nil cukup karena sifatnya one-way (tidak menunggu balasan)
+            return nil
+        end
+        
     end
 
     return oldNamecall(self, ...)
 end)
+
 
 -------------------------------------------------
 -- LIGHTWEIGHT SPAWN LIMITER
@@ -699,11 +704,10 @@ local function startFishingSuperInstantLoop()
     pcall(function() _Cancel:InvokeServer() end)
     task.wait(0.055)
     while getgenv().fishingStart do
-
         lightSpawn(function()
             _Charge:InvokeServer()
         end)
-        task.wait(0.055)
+        -- task.wait(0.01)
         lightSpawn(function()
             _Request:InvokeServer(unpack(args))
         end)
@@ -711,7 +715,6 @@ local function startFishingSuperInstantLoop()
         pcall(function() _Complete:FireServer() end)
         task.wait(delayReset) 
         pcall(function() _Cancel:InvokeServer() end)
-        task.wait(0.055)
     end
 end
 
@@ -2139,7 +2142,7 @@ end
 
 local Window = WindUI:CreateWindow({ Title = "UQiLL", Icon = "chess-king", Author = "by UQi", Transparent = true })
 Window.Name = GUI_NAMES.Main 
-Window:Tag({ Title = "v.4.5.1", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
+Window:Tag({ Title = "v.4.5.2", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 0 })
 Window:SetToggleKey(Enum.KeyCode.H)
 Window:EditOpenButton({
     Enabled = false,
