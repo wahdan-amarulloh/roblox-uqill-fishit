@@ -1004,26 +1004,50 @@ local function ToggleAnims(state)
 end
 
 -- ============================================================
--- 🎣 AUTO FAVORITE v5.0 — FILTER NAME & MUTATION
+-- 🎣 AUTO FAVORITE v5.0 (Smart Match Fix)
 -- ============================================================
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Replion = require(ReplicatedStorage.Packages.Replion)
 local Data = Replion.Client:WaitReplion("Data")
+local FavoriteItem = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/FavoriteItem"]
 
--- Remote
-local FavoriteItem = ReplicatedStorage
-	:WaitForChild("Packages")
-	:WaitForChild("_Index")
-	:WaitForChild("sleitnick_net@0.2.0")
-	:WaitForChild("net")
-	:WaitForChild("RE/FavoriteItem")
+-- [DYNAMIC LOADER] Mutation List
+local AllMutationNames = {}
+local VariantDB_IDtoName = {}
 
--------------------------------------------------------
--- Load FishDB (Smart Dynamic Loading)
--------------------------------------------------------
+local VariantsFolder = ReplicatedStorage:FindFirstChild("Variants")
+if VariantsFolder then
+    for _, variantModule in ipairs(VariantsFolder:GetChildren()) do
+        if variantModule:IsA("ModuleScript") then
+            local ok, mod = pcall(require, variantModule)
+            local mutName = nil
+            
+            if ok then
+                if mod.Data and mod.Data.Name then mutName = mod.Data.Name
+                elseif mod.Name then mutName = mod.Name end
+            end
+            
+            -- Fallback ke nama file jika module gagal load
+            if not mutName then mutName = variantModule.Name end
+
+            if mutName then
+                VariantDB_IDtoName[variantModule.Name] = mutName
+                table.insert(AllMutationNames, mutName)
+            end
+        end
+    end
+end
+table.sort(AllMutationNames)
+
+-- Fallback jika folder Variants kosong/gagal
+if #AllMutationNames == 0 then
+    AllMutationNames = {"Shiny", "Sparkling", "Big", "Giant", "Tiny", "Mutated", "Atlantis", "Dark", "Ghost", "Frozen", "Golden", "Negative", "Lunar", "Solar", "Midas", "Hexed", "Sinister", "Electric"}
+    warn("[System] Using fallback mutation list")
+end
+
+-- [DYNAMIC LOADER] Fish List
 local FishDB = {}
-local AllFishNames = {} -- Daftar nama ikan untuk UI
+local AllFishNames = {}
 
 for _, module in ipairs(ReplicatedStorage.Items:GetChildren()) do
 	if module:IsA("ModuleScript") then
@@ -1031,180 +1055,131 @@ for _, module in ipairs(ReplicatedStorage.Items:GetChildren()) do
 		if ok and mod and mod.Data and mod.Data.Type == "Fish" then
 			FishDB[mod.Data.Id] = {
                 Tier = mod.Data.Tier,
-                Name = mod.Data.Name
+                Name = mod.Data.Name,
+                Icon = mod.Data.Icon
             }
             table.insert(AllFishNames, mod.Data.Name)
 		end
 	end
 end
-table.sort(AllFishNames) -- Urutkan nama ikan A-Z
-warn("[AFv5] FishDB Loaded with " .. #AllFishNames .. " species")
+table.sort(AllFishNames)
 
--------------------------------------------------------
--- Selected Filters
--------------------------------------------------------
-local SelectedTier = {}
-local SelectedNames = {}
-local SelectedMutations = {}
 
-function SetSelectedRarities(list)
-	SelectedTier = {}
-	local map = {
-		Common = 1, Uncommon = 2, Rare = 3, Epic = 4,
-		Legendary = 5, Mythic = 6, Secret = 7,
-		Exotic = 8, Azure = 9
-	}
-	for _, rarity in ipairs(list) do
-		local tier = map[rarity]
-		if tier then SelectedTier[tier] = true end
-	end
-	warn("[AFv5] Rarity Filter Updated")
-end
-
-function SetSelectedNames(list)
-    SelectedNames = {}
-    if not list then return end
-    for _, name in ipairs(list) do
-        SelectedNames[name] = true
+-- [UI CONTROLLERS]
+local function SetSelectedRarities(list)
+	SettingsState.AutoFavorite.Rarities = {} -- Reset dulu biar bersih
+	local map = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Mythic=6, Secret=7, Exotic=8, Azure=9}
+	for _, r in ipairs(list) do 
+        if map[r] then SettingsState.AutoFavorite.Rarities[map[r]] = true end 
     end
-    warn("[AFv5] Name Filter Updated: " .. #list .. " fish selected")
 end
 
-function SetSelectedMutations(list)
-    SelectedMutations = {}
-    if not list then return end
-    for _, mut in ipairs(list) do
-        SelectedMutations[mut] = true
+local function SetSelectedNames(list)
+    SettingsState.AutoFavorite.Names = {}
+    if list then 
+        for _, n in ipairs(list) do SettingsState.AutoFavorite.Names[n] = true end 
     end
-    warn("[AFv5] Mutation Filter Updated: " .. #list .. " mutations selected")
 end
 
--------------------------------------------------------
--- FAVORITE LOGIC (MULTI-FILTER)
--------------------------------------------------------
+local function SetSelectedMutations(list)
+    SettingsState.AutoFavorite.Mutations = {}
+    if list then 
+        for _, m in ipairs(list) do SettingsState.AutoFavorite.Mutations[m] = true end 
+    end
+end
+
 local KnownUUID = {}
 
-local function FavoriteIfMatch(item)
-	if not item then return end
-	local uuid = item.UUID
-	if KnownUUID[uuid] then return end
+-- [[ CORE: SMART MATCHING LOGIC ]]
+local function GetMutationNameFromItem(item)
+    -- Coba ambil ID dari berbagai property
+    local varID = item.Variant or item.VariantID or (item.Properties and (item.Properties.Variant or item.Properties.VariantID))
+    if varID then
+        -- Coba convert ID ke Nama menggunakan database kita
+        local nameFromDB = VariantDB_IDtoName[tostring(varID)]
+        if nameFromDB then return nameFromDB end
+        return tostring(varID) -- Fallback ke ID string jika tidak ada di DB
+    end
+    -- Fallback ke property Mutation jika ada (biasanya string)
+    return item.Mutation or (item.Properties and item.Properties.Mutation)
+end
 
-	local id = item.Id
-	local fav = item.Favorited
+local function FavoriteIfMatch(item)
+	if not item or KnownUUID[item.UUID] then return end
     
-    local data = FishDB[id]
-    if not data then return end -- Skip jika item bukan ikan di DB
+    local data = FishDB[item.Id]
+    if not data then return end -- Bukan ikan
 
     local tier = data.Tier
     local name = data.Name
+    local mutationName = GetMutationNameFromItem(item)
+
+	-- 1. Cek Filter Aktif (Apakah user memilih sesuatu?)
+    local rarityList = SettingsState.AutoFavorite.Rarities
+    local nameList = SettingsState.AutoFavorite.Names
+    local mutList = SettingsState.AutoFavorite.Mutations
     
-    -- Detect Mutation (Priority Check)
-	local mutation = nil
+    local isRarityActive = (next(rarityList) ~= nil)
+    local isNameActive = (next(nameList) ~= nil)
+    local isMutActive = (next(mutList) ~= nil)
+
+    -- 2. Logika Rarity (Terpisah / OR Logic)
+    -- Jika Rarity aktif dan cocok, item akan di-fav (terlepas dari nama/mutasi)
+    local matchRarity = isRarityActive and rarityList[tier]
+
+    -- 3. Logika Name & Mutation (Digabung / AND Logic jika keduanya aktif)
+    local matchSpecific = false
     
-    -- Cek weightData
-    if weightData then
-        mutation = weightData.Mutation or weightData.Variant or weightData.VariantID
+    if isNameActive and isMutActive then
+        -- Skenario: User pilih Nama DAN Mutasi (misal: Shark + Shiny)
+        -- Maka item HARUS cocok keduanya (AND)
+        local nOk = nameList[name]
+        local mOk = mutationName and mutList[mutationName]
+        matchSpecific = nOk and mOk
+
+    elseif isNameActive then
+        -- Skenario: User hanya pilih Nama
+        matchSpecific = nameList[name]
+
+    elseif isMutActive then
+        -- Skenario: User hanya pilih Mutasi
+        matchSpecific = mutationName and mutList[mutationName]
     end
 
-    -- Cek Item Wrapper
-    if not mutation and item then
-        mutation = item.Mutation or item.Variant or item.VariantID
-    end
-    
-    -- Cek Properties (jika ada)
-    if not mutation and item and item.Properties then
-         mutation = item.Properties.Mutation or item.Properties.Variant or item.Properties.VariantID
-    end
-    
-     -- Deep scan jika masih belum ketemu
-    if not mutation and typeof(weightData) == "table" then
-        for k, v in pairs(weightData) do
-            if string.lower(k) == "variant" or string.lower(k) == "variantid" or string.lower(k) == "mutation" then
-                mutation = v
-                break
-            end
-        end
-    end
-
-	-- LOGIC: Jika SALAH SATU kondisi terpenuhi (OR logic), maka Favorite
-    local matchRarity   = (tier and SelectedTier[tier])
-    local matchName     = (name and SelectedNames[name])
-    local matchMutation = (mutation and SelectedMutations[mutation])
-
-	if (matchRarity or matchName or matchMutation) and not fav then
-		warn("[AFv5] Favoriting:", name, "| Mut:", mutation or "None")
-		pcall(function()
-			FavoriteItem:FireServer(uuid)
-		end)
+    -- 4. Final Decision (Rarity OR Specific)
+    -- Simpan jika Rarity cocok ATAU (Nama/Mutasi logic) cocok
+	if (matchRarity or matchSpecific) and not item.Favorited then
+		warn("[AutoFav] Locking:", name, "| Mut:", mutationName or "None")
+		pcall(function() FavoriteItem:FireServer(item.UUID) end)
 	end
-
-	KnownUUID[uuid] = true
+	KnownUUID[item.UUID] = true
 end
 
 local function InitialScan()
 	local inv = Data:Get("Inventory")
-	if inv and inv.Items then
-		warn("[AFv5] InitialScan...")
-		for _, item in pairs(inv.Items) do
-			FavoriteIfMatch(item)
-		end
-	end
+	if inv and inv.Items then 
+        for _, item in pairs(inv.Items) do FavoriteIfMatch(item) end 
+    end
 end
 
--------------------------------------------------------
--- EVENT CONTROL (ON / OFF)
--------------------------------------------------------
-local newFishConnection = nil
-local AutoFavActive = false
-local ObtainedNewFish = net["RE/ObtainedNewFishNotification"]
-
-local function StartAutoFavorite()
-	if SettingsState.AutoFavActive then return end
-	warn("[AFv5] Auto Favorite ENABLED")
-
-     -- FIX: RESET CACHE SETIAP DI-ON
-    KnownUUID = {}
-
-	-- initial scan once
-	InitialScan()
-
-	-- attach event
-    newFishConnection = ObtainedNewFish.OnClientEvent:Connect(function(...)
-        if not SettingsState.AutoFavorite.Active then return end
-
-        warn("[AFv5] New fish obtained → scanning...")
-
+-- Hook ke Event Ikan Baru (Agar scan real-time)
+local ObtainedNewFish = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/ObtainedNewFishNotification"]
+ObtainedNewFish.OnClientEvent:Connect(function(_, weightData, wrapper)
+    if SettingsState.AutoFavorite.Active then
         task.defer(function()
             local inv = Data:Get("Inventory")
-            if not inv or not inv.Items then return end
-
-            for _, item in pairs(inv.Items) do
-                FavoriteIfMatch(item)
+            if inv and inv.Items then
+                -- Scan ulang inventory (aman karena ada KnownUUID check)
+                for _, item in pairs(inv.Items) do FavoriteIfMatch(item) end
             end
         end)
-    end)
-end
-
-local function StopAutoFavorite()
-	if not AutoFavActive then return end
-	AutoFavActive = false
-	warn("[AFv5] Auto Favorite DISABLED")
-    if newFishConnection then
-        newFishConnection:Disconnect()
-        newFishConnection = nil
     end
+end)
 
-     -- FIX: RESET CACHE SETIAP DI-ON
-    KnownUUID = {}
-end
-
--------------------------------------------------------
--- UI toggle wrapper
--------------------------------------------------------
 function ToggleAutoFavorite(state)
-	if state then StartAutoFavorite()
-	else StopAutoFavorite() end
+	if state then warn("AutoFav ON"); InitialScan() else warn("AutoFav OFF"); KnownUUID={} end
 end
+
 
 -- =====================================================
 -- 🌌 BAGIAN 7: TELEPORT UTILS
@@ -2858,94 +2833,30 @@ sectionMisc:Toggle({
 -- TabSettings:Button({ Title = "Remove VFX (Permanent)", Desc = "Delete Effects", Icon = "trash-2", Callback = function() if SettingsState.VFXRemoved then WindUI:Notify({Title = "VFX", Content = "Already Removed!", Duration = 2}) return end; SettingsState.VFXRemoved = true; ExecuteRemoveVFX(); WindUI:Notify({Title = "VFX", Content = "Deleted!", Duration = 2}) end })
 local RarityList = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret",}
 
+-- AUTO FAV TAB
 TabFavorite:Dropdown({
-    Title = "Select Rarity to Favorite",
-    Desc = "Choose rarities",
-    Values = RarityList,
-    Value = {},
+    Title = "Select Rarity", 
+    Values = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret", "Exotic", "Azure"}, 
     Multi = true,
-    AllowNone = true,
-    Callback = function(list)
-        SetSelectedRarities(list)
-    end
+    Callback = function(l) SetSelectedRarities(l) end
 })
-
--- [NEW] Dropdown for Fish Names (Dynamic from AllFishNames table)
 TabFavorite:Dropdown({
-    Title = "Select Fish Name",
-    Desc = "Search & select specific fish",
-    Values = AllFishNames, -- Populated dynamically
-    Value = {},
+    Title = "Select Fish Name", 
+    Values = AllFishNames, 
     Multi = true,
-    AllowNone = true,
-    Callback = function(list)
-        SetSelectedNames(list)
-    end
+    Callback = function(l) SetSelectedNames(l) end
 })
-
--- -- [NEW] Dropdown for Mutations (Dynamically fetched from ReplicatedStorage)
--- local MutationList = {}
--- local VariantsFolder = ReplicatedStorage:FindFirstChild("Variants") -- Cari folder Variants
-
--- if VariantsFolder then
---     for _, variantModule in ipairs(VariantsFolder:GetChildren()) do
---         if variantModule:IsA("ModuleScript") then
---             -- Coba require module untuk ambil nama mutasi
---             local ok, mod = pcall(require, variantModule)
---             if ok and mod and mod.Data and mod.Data.Name then
---                 table.insert(MutationList, mod.Data.Name)
---             elseif ok and mod and mod.Name then -- Alternatif struktur
---                  table.insert(MutationList, mod.Name)
---             else
---                 -- Fallback: Gunakan nama module jika tidak ada data internal
---                 table.insert(MutationList, variantModule.Name)
---             end
---         end
---     end
--- end
-
--- -- Urutkan nama mutasi A-Z agar rapi
--- table.sort(MutationList)
-
--- -- Jika kosong (folder tidak ketemu/kosong), kasih fallback list biar UI gak error
--- if #MutationList == 0 then
---     warn("[AFv5] Warning: No mutations found in ReplicatedStorage.Variants. Using fallback list.")
---     MutationList = {
---         "Shiny", "Sparkling", "Big", "Giant", "Tiny", "Mutated", 
---         "Abyssal", "Radiant", "Neon", "Atlantis", "Dark", "Ghost", 
---         "Frozen", "Golden", "Negative", "Lunar", "Solar", "Midas", 
---         "Hexed", "Ghastly", "Sinister", "Synthetic", "Electric"
---     }
---     table.sort(MutationList)
--- else
---     warn("[AFv5] Mutation List Loaded: " .. #MutationList .. " variants found.")
--- end
-
--- TabFavorite:Dropdown({
---     Title = "Select Mutation",
---     Desc = "Auto favorite by mutation type",
---     Values = MutationList,
---     Value = {},
---     Multi = true,
---     AllowNone = true,
---     Callback = function(list)
---         SetSelectedMutations(list)
---     end
--- })
-
+TabFavorite:Dropdown({
+    Title = "Select Mutation", 
+    Values = AllMutationNames, -- Ini sekarang sudah dinamis!
+    Multi = true,
+    Callback = function(l) SetSelectedMutations(l) end
+})
 TabFavorite:Toggle({
-    Title = "Active Auto Favorite",
-    Desc = "Automatically favorites selected rarities",
-    Icon = "star",
-    Value = false,
-    Callback = function(state)
-        SettingsState.AutoFavorite.Active = state
-        ToggleAutoFavorite(state)
-        if state then
-            WindUI:Notify({Title = "Auto Favorite", Content = "Running...", Duration = 2})
-        else
-            WindUI:Notify({Title = "Auto Favorite", Content = "Stopped", Duration = 2})
-        end
+    Title = "Active Auto Favorite", 
+    Callback = function(s) 
+        SettingsState.AutoFavorite.Active = s
+        ToggleAutoFavorite(s) 
     end
 })
 
