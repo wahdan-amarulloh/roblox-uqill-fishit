@@ -1783,12 +1783,17 @@ end
 -------------------------------------------------------
 -- BUILD PAYLOAD
 -------------------------------------------------------
-local function BuildFishPayload(player, fishId, weight)
+-- [MODIFIED] Added mutation parameter
+local function BuildFishPayload(player, fishId, weight, mutation)
 	local fish = FishDB[fishId]
 	local tier = fish.Tier
+	
+	local mutationText = mutation or "None"
+	if mutationText == nil then mutationText = "None" end
 
 	return {
-		username = "UQiLL Fishing Logger",
+		username = "UQiLL",
+        avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
 		embeds = {{
 			title = (RARITY_GRADIENT[tier] or "") .. " 🎣 Fish Obtained",
 			color = RARITY_COLOR[tier],
@@ -1797,9 +1802,13 @@ local function BuildFishPayload(player, fishId, weight)
 				{ name = "Fish", value = fish.Name, inline = true },
 				{ name = "Rarity", value = RARITY_MAP[tier], inline = true },
 				{ name = "Weight", value = string.format("%.2f kg", weight or 0), inline = true },
+				{ name = "Mutation", value = tostring(mutationText), inline = true }, -- [NEW] Mutation Field
 			},
 			thumbnail = { url = IconCache[fishId] },
 			timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            footer = {
+                text = "UQiLL",
+            },
 		}}
 	}
 end
@@ -1860,13 +1869,40 @@ ObtainedNewFish.OnClientEvent:Connect(function(_, weightData, wrapper)
 	end
 
 	SettingsState.WebhookFish.SentUUID[item.UUID] = true
+	local mutation = nil
+    
+    -- Cek weightData
+    if weightData then
+        mutation = weightData.Mutation or weightData.Variant or weightData.VariantID
+    end
+
+    -- Cek Item Wrapper
+    if not mutation and item then
+        mutation = item.Mutation or item.Variant or item.VariantID
+    end
+    
+    -- Cek Properties (jika ada)
+    if not mutation and item and item.Properties then
+         mutation = item.Properties.Mutation or item.Properties.Variant or item.Properties.VariantID
+    end
+    
+     -- Deep scan jika masih belum ketemu
+    if not mutation and typeof(weightData) == "table" then
+        for k, v in pairs(weightData) do
+            if string.lower(k) == "variant" or string.lower(k) == "variantid" or string.lower(k) == "mutation" then
+                mutation = v
+                break
+            end
+        end
+    end
 
 	FetchFishIconAsync(item.Id, function()
 		SendWebhook(
 			BuildFishPayload(
 				LocalPlayer.Name,
 				item.Id,
-				weightData and weightData.Weight or 0
+				weightData and weightData.Weight or 0,
+                mutation
 			)
 		)
 	end)
@@ -1884,6 +1920,20 @@ local function StartFishWebhook()
 
 	SettingsState.WebhookFish.Active = true
 	SettingsState.WebhookFish.SentUUID = {}
+
+        -- [NEW] Send Activation Message with GIF
+    task.spawn(function()
+        SendWebhook({
+            username = "UQiLL",
+            avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
+            embeds = {{
+                title = "WHOOOP, **" .. LocalPlayer.Name .. "** activated Webhook",
+                image = { url = "https://i.makeagif.com/media/3-13-2016/fgm1lc.gif" },
+                color = 0x30ff6a -- Hex color matching the UI theme
+            }}
+        })
+    end)
+
 	warn("[WEBHOOK] ENABLED")
 end
 
