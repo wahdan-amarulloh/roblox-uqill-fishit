@@ -1,10 +1,12 @@
--- Check if you have ANY Fishing Rods items
--- Shows what those IDs actually are
+-- Real Rod Finder (Based on Game Architecture)
+-- Uses EquippedItems + Player Attributes
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
 
+-- Webhook
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1455588039152767159/eFMjdTcF7MA_Yi3wE4UggQa6nFQMtBpCdY4Qo0A5OP_EAR8Yhkc4cNV4_kQLYStiyirP"
 local HttpRequest = syn and syn.request or http_request or request or 
                     (fluxus and fluxus.request) or (krnl and krnl.request)
@@ -20,151 +22,193 @@ local function SendWebhook(payload)
     end)
 end
 
+local function SendMessage(text)
+    SendWebhook({
+        username = "UQiLL Rod Analyzer",
+        avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
+        embeds = {{
+            description = "```lua\n" .. text .. "```",
+            color = 0x30ff6a
+        }}
+    })
+end
+
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("🔍 CHECKING YOUR INVENTORY ITEMS")
+print("🎣 REAL ROD FINDER (Game Architecture)")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+local output = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+output = output .. "🎣 EQUIPPED ROD ANALYSIS\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+-- METHOD 1: Player Attributes (Most Direct)
+output = output .. "📋 METHOD 1: PLAYER ATTRIBUTES\n\n"
+
+local rodName = LocalPlayer:GetAttribute("FishingRod")
+local skinName = LocalPlayer:GetAttribute("FishingRodSkin")
+
+if rodName then
+    output = output .. "✅ Equipped Rod: " .. rodName .. "\n"
+    if skinName then
+        output = output .. "🎨 Active Skin: " .. skinName .. "\n"
+    else
+        output = output .. "🎨 Active Skin: None\n"
+    end
+else
+    output = output .. "❌ No rod equipped (Attribute not set)\n"
+end
+
+-- METHOD 2: Replion EquippedItems
+output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+output = output .. "📦 METHOD 2: REPLION EQUIPPED ITEMS\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
 local Replion = require(ReplicatedStorage.Packages.Replion)
 local Data = Replion.Client:WaitReplion("Data")
-local inventory = Data:Get("Inventory")
 
-local output = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "📋 YOUR INVENTORY BREAKDOWN\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
--- Count by type
-local typeCount = {}
-
-for uuid, item in pairs(inventory.Items) do
-    if item.Id then
-        local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(item.Id))
+local equippedItems = Data:Get("EquippedItems")
+if equippedItems and #equippedItems > 0 then
+    output = output .. "✅ Equipped Items Array:\n"
+    for i, uuid in ipairs(equippedItems) do
+        output = output .. "  [" .. i .. "] UUID: " .. tostring(uuid) .. "\n"
+    end
+    
+    -- Get first equipped item (should be rod)
+    local equippedRodUUID = equippedItems[1]
+    
+    if equippedRodUUID then
+        output = output .. "\n🔍 Searching for rod with UUID: " .. equippedRodUUID .. "\n"
         
-        if itemModule then
-            local ok, data = pcall(require, itemModule)
+        -- Find in inventory
+        local inventory = Data:Get("Inventory")
+        if inventory and inventory.Items then
+            local rodItem = inventory.Items[equippedRodUUID]
             
-            if ok and data.Data then
-                local itemType = data.Data.Type or "Unknown"
-                typeCount[itemType] = (typeCount[itemType] or 0) + 1
+            if rodItem then
+                output = output .. "\n✅ FOUND EQUIPPED ROD!\n\n"
+                output = output .. "UUID: " .. equippedRodUUID .. "\n"
+                output = output .. "ID: " .. tostring(rodItem.Id) .. "\n"
+                
+                -- Get rod data
+                local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(rodItem.Id))
+                if itemModule then
+                    local ok, data = pcall(require, itemModule)
+                    if ok and data.Data then
+                        output = output .. "Name: " .. (data.Data.Name or "Unknown") .. "\n"
+                        output = output .. "Type: " .. (data.Data.Type or "Unknown") .. "\n"
+                    end
+                end
+                
+                output = output .. "\n📊 FULL ROD DATA:\n"
+                for key, value in pairs(rodItem) do
+                    if type(value) == "table" then
+                        output = output .. "  " .. key .. ":\n"
+                        for k, v in pairs(value) do
+                            if type(v) == "table" then
+                                output = output .. "    " .. k .. ":\n"
+                                for k2, v2 in pairs(v) do
+                                    output = output .. "      " .. k2 .. " = " .. tostring(v2) .. "\n"
+                                end
+                            else
+                                output = output .. "    " .. k .. " = " .. tostring(v) .. "\n"
+                            end
+                        end
+                    else
+                        output = output .. "  " .. key .. " = " .. tostring(value) .. "\n"
+                    end
+                end
+            else
+                output = output .. "❌ UUID not found in inventory!\n"
             end
         end
     end
-end
-
-output = output .. "📊 ITEMS BY TYPE:\n\n"
-for itemType, count in pairs(typeCount) do
-    output = output .. itemType .. ": " .. count .. " items\n"
-end
-
-output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "🎣 ROD STATUS:\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-if typeCount["Fishing Rods"] then
-    output = output .. "✅ You have " .. typeCount["Fishing Rods"] .. " fishing rod(s)!\n"
-    output = output .. "⚠️ But previous script couldn't find them.\n"
-    output = output .. "💡 This might be a script bug.\n"
 else
-    output = output .. "❌ You DON'T own any fishing rods!\n\n"
-    output = output .. "💡 How to get a rod:\n"
-    output = output .. "  1. Visit the shop\n"
-    output = output .. "  2. Buy 'Starter Rod' or any rod\n"
-    output = output .. "  3. Run this script again\n"
+    output = output .. "❌ No equipped items found\n"
 end
 
--- Also check equipped rod
+-- METHOD 3: All Rods in Inventory
 output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "🎒 RAW BACKPACK DUMP (ALL ITEMS):\n"
+output = output .. "📦 METHOD 3: ALL RODS IN INVENTORY\n"
 output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-local LocalPlayer = Players.LocalPlayer
-local backpackCount = 0
+local inventory = Data:Get("Inventory")
+local rodCount = 0
 
--- List EVERYTHING in backpack
-for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
-    backpackCount = backpackCount + 1
-    output = output .. backpackCount .. ". " .. item.Name .. " (" .. item.ClassName .. ")\n"
-    
-    -- Show some properties
-    if item:IsA("Tool") then
-        output = output .. "   → This is a Tool\n"
-    end
-    
-    -- Check for attributes
-    local attrs = item:GetAttributes()
-    if next(attrs) then
-        output = output .. "   Attributes:\n"
-        for k, v in pairs(attrs) do
-            output = output .. "     " .. k .. " = " .. tostring(v) .. "\n"
-        end
-    end
-end
-
-if backpackCount == 0 then
-    output = output .. "❌ Backpack is EMPTY!\n"
-end
-
-output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "👤 RAW CHARACTER DUMP (ALL ITEMS):\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-local charCount = 0
-
-if LocalPlayer.Character then
-    for _, item in pairs(LocalPlayer.Character:GetChildren()) do
-        -- Only show relevant items (not body parts)
-        if item:IsA("Tool") or item:IsA("Accessory") or 
-           item.Name:lower():find("rod") or item.Name:lower():find("gear") then
-            charCount = charCount + 1
-            output = output .. charCount .. ". " .. item.Name .. " (" .. item.ClassName .. ")\n"
-            
-            if item:IsA("Tool") then
-                output = output .. "   → EQUIPPED TOOL ⭐\n"
-            end
-            
-            local attrs = item:GetAttributes()
-            if next(attrs) then
-                output = output .. "   Attributes:\n"
-                for k, v in pairs(attrs) do
-                    output = output .. "     " .. k .. " = " .. tostring(v) .. "\n"
+if inventory and inventory.Items then
+    for uuid, item in pairs(inventory.Items) do
+        if item.Id then
+            local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(item.Id))
+            if itemModule then
+                local ok, data = pcall(require, itemModule)
+                if ok and data.Data and data.Data.Type == "Fishing Rods" then
+                    rodCount = rodCount + 1
+                    output = output .. "🎣 Rod #" .. rodCount .. ": " .. (data.Data.Name or "Unknown") .. "\n"
+                    output = output .. "   UUID: " .. uuid .. "\n"
+                    
+                    if item.Metadata then
+                        output = output .. "   Metadata: {table}\n"
+                    end
+                    
+                    output = output .. "\n"
                 end
             end
         end
     end
     
-    if charCount == 0 then
-        output = output .. "❌ No relevant items equipped\n"
+    if rodCount == 0 then
+        output = output .. "❌ No rods found in inventory\n"
+    else
+        output = output .. "📊 Total: " .. rodCount .. " rod(s)\n"
     end
-else
-    output = output .. "❌ Character not loaded\n"
 end
 
 output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "💡 CONCLUSION:\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-if typeCount["Fishing Rods"] then
-    output = output .. "You HAVE rods in inventory data.\n"
-    output = output .. "But they're not showing up in scans.\n"
-    output = output .. "Possible issue with script logic.\n"
-elseif hasRod then
-    output = output .. "You have a PHYSICAL rod equipped.\n"
-    output = output .. "But no rods in Replion inventory.\n"
-    output = output .. "This is a game design choice.\n"
-else
-    output = output .. "You genuinely don't have any rods.\n"
-    output = output .. "Go buy one from the shop first!\n"
-end
+output = output .. "✅ ANALYSIS COMPLETE\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
 print(output)
 
 -- Send to Discord
 SendWebhook({
-    username = "UQiLL Inventory Checker",
+    username = "UQiLL Rod Analyzer",
     avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
     embeds = {{
-        description = "```lua\n" .. output .. "```",
+        title = "🎣 Analyzing Your Rods...",
+        description = "Using game's actual architecture",
         color = 0x30ff6a
     }}
 })
 
-print("\n✅ Check Discord for full breakdown!")
+task.wait(1)
+
+-- Split and send
+local chunks = {}
+local current = ""
+for line in output:gmatch("[^\n]+") do
+    if #current + #line > 1800 then
+        table.insert(chunks, current)
+        current = line .. "\n"
+    else
+        current = current .. line .. "\n"
+    end
+end
+if #current > 0 then
+    table.insert(chunks, current)
+end
+
+for _, chunk in ipairs(chunks) do
+    SendMessage(chunk)
+    task.wait(1)
+end
+
+SendWebhook({
+    username = "UQiLL Rod Analyzer",
+    avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
+    embeds = {{
+        title = "✅ Analysis Complete!",
+        description = "Check messages above for full rod data",
+        color = 0x30ff6a
+    }}
+})
+
+print("\n✅ Results sent to Discord!")
