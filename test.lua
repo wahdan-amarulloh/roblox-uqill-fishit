@@ -1,5 +1,5 @@
--- Inventory Item Sampler
--- Shows random items to identify rod structure
+-- Working Rod Finder with Correct Type Detection
+-- Type = "Fishing Rods" (not "Rod"!)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -24,7 +24,7 @@ end
 
 local function SendMessage(text)
     SendWebhook({
-        username = "UQiLL Inventory Debugger",
+        username = "UQiLL Rod Analyzer",
         avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
         embeds = {{
             description = "```lua\n" .. text .. "```",
@@ -34,7 +34,7 @@ local function SendMessage(text)
 end
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("🔍 INVENTORY ITEM SAMPLER")
+print("🎣 WORKING ROD FINDER")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 local Replion = require(ReplicatedStorage.Packages.Replion)
@@ -42,93 +42,96 @@ local Data = Replion.Client:WaitReplion("Data")
 local inventory = Data:Get("Inventory")
 
 if not inventory or not inventory.Items then
-    print("❌ No inventory data")
+    print("❌ No inventory")
     return
 end
 
-print("✅ Found " .. #inventory.Items .. " items")
+print("✅ Inventory: " .. #inventory.Items .. " items")
 
--- Sample items to identify structure
 local output = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "🔍 INVENTORY ITEM SAMPLES (First 10)\n"
+output = output .. "🎣 YOUR FISHING RODS\n"
 output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-local count = 0
+local rodCount = 0
+
 for uuid, item in pairs(inventory.Items) do
-    if count >= 10 then break end
-    count = count + 1
-    
-    output = output .. "ITEM #" .. count .. ":\n"
-    output = output .. "UUID: " .. tostring(uuid) .. "\n"
-    
-    -- Print all top-level keys
-    for key, value in pairs(item) do
-        local valueStr = tostring(value)
+    -- Check if item.Id exists in Items database
+    if item.Id then
+        local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(item.Id))
         
-        if type(value) == "table" then
-            valueStr = "{table}"
-        elseif type(value) == "string" and #value > 50 then
-            valueStr = value:sub(1, 50) .. "..."
-        end
-        
-        output = output .. "  " .. key .. " = " .. valueStr .. "\n"
-    end
-    
-    output = output .. "\n"
-end
-
--- Look for Item database types
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "📚 ITEM DATABASE TYPES\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-local typeCount = {}
-for _, module in pairs(ReplicatedStorage.Items:GetChildren()) do
-    if module:IsA("ModuleScript") then
-        local ok, data = pcall(require, module)
-        if ok and data.Data and data.Data.Type then
-            local itemType = data.Data.Type
-            typeCount[itemType] = (typeCount[itemType] or 0) + 1
-        end
-    end
-end
-
-for itemType, count in pairs(typeCount) do
-    output = output .. itemType .. ": " .. count .. " items\n"
-end
-
--- Look for rod-like items
-output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "🎣 SEARCHING FOR ROD-LIKE ITEMS\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-local rodLikeCount = 0
-for _, module in pairs(ReplicatedStorage.Items:GetChildren()) do
-    if module:IsA("ModuleScript") then
-        local ok, data = pcall(require, module)
-        if ok and data.Data then
-            local name = tostring(data.Data.Name or ""):lower()
-            local itemType = tostring(data.Data.Type or ""):lower()
+        if itemModule then
+            local ok, data = pcall(require, itemModule)
             
-            if name:find("rod") or name:find("pole") or name:find("fishing") or
-               itemType:find("rod") or itemType:find("fishing") then
-                rodLikeCount = rodLikeCount + 1
-                output = output .. "Found: " .. (data.Data.Name or "unnamed") .. "\n"
-                output = output .. "  ID: " .. module.Name .. "\n"
-                output = output .. "  Type: " .. (data.Data.Type or "unknown") .. "\n\n"
+            -- FIXED: Check for "Fishing Rods" type!
+            if ok and data.Data and data.Data.Type == "Fishing Rods" then
+                rodCount = rodCount + 1
+                
+                output = output .. "🎣 ROD #" .. rodCount .. "\n"
+                output = output .. "Name: " .. (data.Data.Name or "Unknown") .. "\n"
+                output = output .. "UUID: " .. tostring(uuid) .. "\n"
+                output = output .. "ID: " .. tostring(item.Id) .. "\n"
+                
+                -- Check for Metadata (likely contains enchants!)
+                if item.Metadata then
+                    output = output .. "\n📋 METADATA:\n"
+                    for key, value in pairs(item.Metadata) do
+                        if type(value) == "table" then
+                            output = output .. "  " .. key .. ":\n"
+                            for k, v in pairs(value) do
+                                if type(v) == "table" then
+                                    output = output .. "    " .. k .. ":\n"
+                                    for k2, v2 in pairs(v) do
+                                        output = output .. "      " .. k2 .. " = " .. tostring(v2) .. "\n"
+                                    end
+                                else
+                                    output = output .. "    " .. k .. " = " .. tostring(v) .. "\n"
+                                end
+                            end
+                        else
+                            output = output .. "  " .. key .. " = " .. tostring(value) .. "\n"
+                        end
+                    end
+                end
+                
+                -- Check for other properties
+                output = output .. "\n📊 PROPERTIES:\n"
+                for key, value in pairs(item) do
+                    if key ~= "Metadata" and key ~= "UUID" and key ~= "Id" then
+                        output = output .. "  " .. key .. " = " .. tostring(value) .. "\n"
+                    end
+                end
+                
+                output = output .. "\n" .. string.rep("─", 40) .. "\n\n"
             end
         end
     end
 end
 
-if rodLikeCount == 0 then
-    output = output .. "⚠️ No rod-like items found in database!\n"
-    output = output .. "Rod might use different naming or type.\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+output = output .. "✅ TOTAL RODS FOUND: " .. rodCount .. "\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+if rodCount == 0 then
+    output = output .. "\n⚠️ You don't own any fishing rods yet!\n"
+    output = output .. "💡 Get a rod from the shop first.\n"
 end
 
 print(output)
 
--- Send to Discord in chunks
+-- Send to Discord
+SendWebhook({
+    username = "UQiLL Rod Analyzer",
+    avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
+    embeds = {{
+        title = "🎣 Analyzing Your Rods...",
+        description = "Found " .. #inventory.Items .. " items in inventory",
+        color = 0x30ff6a
+    }}
+})
+
+task.wait(1)
+
+-- Split and send
 local chunks = {}
 local current = ""
 for line in output:gmatch("[^\n]+") do
@@ -143,30 +146,21 @@ if #current > 0 then
     table.insert(chunks, current)
 end
 
-SendWebhook({
-    username = "UQiLL Inventory Debugger",
-    avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
-    embeds = {{
-        title = "🔍 Inventory Analysis",
-        description = "Analyzing 638 items...",
-        color = 0x30ff6a
-    }}
-})
-
-task.wait(1)
-
 for _, chunk in ipairs(chunks) do
     SendMessage(chunk)
     task.wait(1)
 end
 
 SendWebhook({
-    username = "UQiLL Inventory Debugger",
+    username = "UQiLL Rod Analyzer",
     avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
     embeds = {{
-        title = "✅ Analysis Complete",
-        description = "Check messages above for item structure",
-        color = 0x30ff6a
+        title = "✅ Scan Complete!",
+        fields = {
+            { name = "Total Rods", value = tostring(rodCount), inline = true },
+            { name = "Status", value = rodCount > 0 and "✅ Ready" or "⚠️ No rods", inline = true }
+        },
+        color = rodCount > 0 and 0x30ff6a or 0xff6a30
     }}
 })
 
