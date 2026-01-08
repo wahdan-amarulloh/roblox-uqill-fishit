@@ -1,5 +1,5 @@
--- Real Rod Finder (Based on Game Architecture)
--- Uses EquippedItems + Player Attributes
+-- Check EquippedItems Storage
+-- Maybe equipped items stored separately?
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -24,7 +24,7 @@ end
 
 local function SendMessage(text)
     SendWebhook({
-        username = "UQiLL Rod Analyzer",
+        username = "UQiLL Equipped Items Debugger",
         avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
         embeds = {{
             description = "```lua\n" .. text .. "```",
@@ -34,147 +34,129 @@ local function SendMessage(text)
 end
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("🎣 REAL ROD FINDER (Game Architecture)")
+print("🔍 EQUIPPED ITEMS DEEP SCAN")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-local output = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "🎣 EQUIPPED ROD ANALYSIS\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
--- METHOD 1: Player Attributes (Most Direct)
-output = output .. "📋 METHOD 1: PLAYER ATTRIBUTES\n\n"
-
-local rodName = LocalPlayer:GetAttribute("FishingRod")
-local skinName = LocalPlayer:GetAttribute("FishingRodSkin")
-
-if rodName then
-    output = output .. "✅ Equipped Rod: " .. rodName .. "\n"
-    if skinName then
-        output = output .. "🎨 Active Skin: " .. skinName .. "\n"
-    else
-        output = output .. "🎨 Active Skin: None\n"
-    end
-else
-    output = output .. "❌ No rod equipped (Attribute not set)\n"
-end
-
--- METHOD 2: Replion EquippedItems
-output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "📦 METHOD 2: REPLION EQUIPPED ITEMS\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
 local Replion = require(ReplicatedStorage.Packages.Replion)
 local Data = Replion.Client:WaitReplion("Data")
 
+local output = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+output = output .. "🔍 EQUIPPED ITEMS ANALYSIS\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+-- Get equipped items
 local equippedItems = Data:Get("EquippedItems")
-if equippedItems and #equippedItems > 0 then
-    output = output .. "✅ Equipped Items Array:\n"
+
+if not equippedItems or #equippedItems == 0 then
+    output = output .. "❌ No equipped items\n"
+else
+    output = output .. "✅ Found " .. #equippedItems .. " equipped items\n\n"
+    
     for i, uuid in ipairs(equippedItems) do
-        output = output .. "  [" .. i .. "] UUID: " .. tostring(uuid) .. "\n"
-    end
-    
-    -- Get first equipped item (should be rod)
-    local equippedRodUUID = equippedItems[1]
-    
-    if equippedRodUUID then
-        output = output .. "\n🔍 Searching for rod with UUID: " .. equippedRodUUID .. "\n"
+        output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        output = output .. "ITEM #" .. i .. "\n"
+        output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        output = output .. "UUID: " .. tostring(uuid) .. "\n\n"
         
-        -- Find in inventory
+        -- Try to find in inventory
         local inventory = Data:Get("Inventory")
+        local found = false
+        
         if inventory and inventory.Items then
-            local rodItem = inventory.Items[equippedRodUUID]
+            -- Direct UUID lookup
+            local item = inventory.Items[uuid]
             
-            if rodItem then
-                output = output .. "\n✅ FOUND EQUIPPED ROD!\n\n"
-                output = output .. "UUID: " .. equippedRodUUID .. "\n"
-                output = output .. "ID: " .. tostring(rodItem.Id) .. "\n"
+            if item then
+                found = true
+                output = output .. "✅ Found in Inventory.Items[UUID]\n\n"
                 
-                -- Get rod data
-                local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(rodItem.Id))
-                if itemModule then
-                    local ok, data = pcall(require, itemModule)
-                    if ok and data.Data then
-                        output = output .. "Name: " .. (data.Data.Name or "Unknown") .. "\n"
-                        output = output .. "Type: " .. (data.Data.Type or "Unknown") .. "\n"
+                -- Get item data
+                if item.Id then
+                    local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(item.Id))
+                    if itemModule then
+                        local ok, data = pcall(require, itemModule)
+                        if ok and data.Data then
+                            output = output .. "Name: " .. (data.Data.Name or "Unknown") .. "\n"
+                            output = output .. "Type: " .. (data.Data.Type or "Unknown") .. "\n"
+                        end
                     end
                 end
                 
-                output = output .. "\n📊 FULL ROD DATA:\n"
-                for key, value in pairs(rodItem) do
-                    if type(value) == "table" then
-                        output = output .. "  " .. key .. ":\n"
-                        for k, v in pairs(value) do
-                            if type(v) == "table" then
-                                output = output .. "    " .. k .. ":\n"
-                                for k2, v2 in pairs(v) do
-                                    output = output .. "      " .. k2 .. " = " .. tostring(v2) .. "\n"
-                                end
-                            else
-                                output = output .. "    " .. k .. " = " .. tostring(v) .. "\n"
-                            end
-                        end
-                    else
+                output = output .. "\n📊 Item Properties:\n"
+                for key, value in pairs(item) do
+                    if key ~= "Metadata" then
                         output = output .. "  " .. key .. " = " .. tostring(value) .. "\n"
                     end
                 end
-            else
-                output = output .. "❌ UUID not found in inventory!\n"
-            end
-        end
-    end
-else
-    output = output .. "❌ No equipped items found\n"
-end
-
--- METHOD 3: All Rods in Inventory
-output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "📦 METHOD 3: ALL RODS IN INVENTORY\n"
-output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-local inventory = Data:Get("Inventory")
-local rodCount = 0
-
-if inventory and inventory.Items then
-    for uuid, item in pairs(inventory.Items) do
-        if item.Id then
-            local itemModule = ReplicatedStorage.Items:FindFirstChild(tostring(item.Id))
-            if itemModule then
-                local ok, data = pcall(require, itemModule)
-                if ok and data.Data and data.Data.Type == "Fishing Rods" then
-                    rodCount = rodCount + 1
-                    output = output .. "🎣 Rod #" .. rodCount .. ": " .. (data.Data.Name or "Unknown") .. "\n"
-                    output = output .. "   UUID: " .. uuid .. "\n"
-                    
-                    if item.Metadata then
-                        output = output .. "   Metadata: {table}\n"
+                
+                -- ENCHANT DATA CHECK
+                if item.Metadata then
+                    output = output .. "\n🔮 METADATA (ENCHANTS?):\n"
+                    for key, value in pairs(item.Metadata) do
+                        if type(value) == "table" then
+                            output = output .. "  " .. key .. ":\n"
+                            for k, v in pairs(value) do
+                                if type(v) == "table" then
+                                    output = output .. "    " .. k .. ":\n"
+                                    for k2, v2 in pairs(v) do
+                                        output = output .. "      " .. k2 .. " = " .. tostring(v2) .. "\n"
+                                    end
+                                else
+                                    output = output .. "    " .. k .. " = " .. tostring(v) .. "\n"
+                                end
+                            end
+                        else
+                            output = output .. "  " .. key .. " = " .. tostring(value) .. "\n"
+                        end
                     end
-                    
-                    output = output .. "\n"
                 end
             end
         end
-    end
-    
-    if rodCount == 0 then
-        output = output .. "❌ No rods found in inventory\n"
-    else
-        output = output .. "📊 Total: " .. rodCount .. " rod(s)\n"
+        
+        if not found then
+            output = output .. "❌ NOT found in Inventory.Items\n"
+            output = output .. "💡 Maybe stored elsewhere?\n"
+        end
+        
+        output = output .. "\n"
     end
 end
 
+-- Check all Data keys
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+output = output .. "📋 ALL DATA KEYS (Looking for equipped storage):\n"
+output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+-- List all keys in Data replion
+local allKeys = Data:GetAll()
+for key, value in pairs(allKeys) do
+    local valueType = type(value)
+    local valueInfo = valueType
+    
+    if valueType == "table" then
+        local count = 0
+        for _ in pairs(value) do count = count + 1 end
+        valueInfo = "table (" .. count .. " items)"
+    elseif valueType == "string" and #value > 50 then
+        valueInfo = "string (long)"
+    end
+    
+    output = output .. key .. " = " .. valueInfo .. "\n"
+end
+
 output = output .. "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-output = output .. "✅ ANALYSIS COMPLETE\n"
+output = output .. "✅ SCAN COMPLETE\n"
 output = output .. "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
 print(output)
 
 -- Send to Discord
 SendWebhook({
-    username = "UQiLL Rod Analyzer",
+    username = "UQiLL Equipped Items Debugger",
     avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
     embeds = {{
-        title = "🎣 Analyzing Your Rods...",
-        description = "Using game's actual architecture",
+        title = "🔍 Deep Scanning Equipped Items...",
+        description = "Checking where equipped items are stored",
         color = 0x30ff6a
     }}
 })
@@ -202,11 +184,11 @@ for _, chunk in ipairs(chunks) do
 end
 
 SendWebhook({
-    username = "UQiLL Rod Analyzer",
+    username = "UQiLL Equipped Items Debugger",
     avatar_url = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmU4Nzs0XL0IjJK2U-7u2qqVEO9FnkQkzb3g&s",
     embeds = {{
-        title = "✅ Analysis Complete!",
-        description = "Check messages above for full rod data",
+        title = "✅ Scan Complete!",
+        description = "Check above for equipped items data",
         color = 0x30ff6a
     }}
 })
