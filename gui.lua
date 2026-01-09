@@ -1,112 +1,125 @@
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-
 local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local CAS = game:GetService("ContextActionService")
+
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local cmdrGui = playerGui:WaitForChild("Cmdr")
+
+cmdrGui.DisplayOrder = 999999
 
 --========================
--- Helpers
+-- Movement block
 --========================
-local function getScreenGuiNames()
-    local names = {}
-    for _, obj in ipairs(playerGui:GetChildren()) do
-        if obj:IsA("ScreenGui") then
-            table.insert(names, obj.Name)
-        end
-    end
-    table.sort(names)
-    return names
+local function sink()
+    return Enum.ContextActionResult.Sink
 end
 
-local function getGui(name)
-    return playerGui:FindFirstChild(name)
+local function enableTypingBlock()
+    CAS:BindAction("CmdrBlockW", sink, false, Enum.KeyCode.W)
+    CAS:BindAction("CmdrBlockA", sink, false, Enum.KeyCode.A)
+    CAS:BindAction("CmdrBlockS", sink, false, Enum.KeyCode.S)
+    CAS:BindAction("CmdrBlockD", sink, false, Enum.KeyCode.D)
+    CAS:BindAction("CmdrBlockSpace", sink, false, Enum.KeyCode.Space)
+end
+
+local function disableTypingBlock()
+    CAS:UnbindAction("CmdrBlockW")
+    CAS:UnbindAction("CmdrBlockA")
+    CAS:UnbindAction("CmdrBlockS")
+    CAS:UnbindAction("CmdrBlockD")
+    CAS:UnbindAction("CmdrBlockSpace")
 end
 
 --========================
--- UI
+-- Find input TextBox
 --========================
-local Window = WindUI:CreateWindow({
-    Title = "PlayerGui Explorer",
-    Icon = "layout-dashboard",
-    Author = "Wahdan Tools",
-    Folder = "GuiExplorer",
-    Size = UDim2.fromOffset(560, 420),
-})
-
-local Tab = Window:Tab({ Title = "Explorer", Icon = "search" })
-local Section = Tab:Section({ Title = "PlayerGui ScreenGuis" })
-
-local guiNames = getScreenGuiNames()
-local selectedName = guiNames[1] or ""
-
-Section:Dropdown({
-    Title = "Select ScreenGui",
-    Values = guiNames,
-    Value = selectedName,
-    Callback = function(v)
-        selectedName = v
-        local gui = getGui(selectedName)
-        WindUI:Notify({
-            Title = "Selected",
-            Content = selectedName .. " | Enabled = " .. tostring(gui and gui.Enabled)
-        })
-    end
-})
-
-Section:Button({
-    Title = "Toggle Enabled (On/Off)",
-    Callback = function()
-        local gui = getGui(selectedName)
-        if not gui then
-            WindUI:Notify({Title="Error", Content="GUI not found: "..tostring(selectedName)})
-            return
-        end
-        if not gui:IsA("ScreenGui") then
-            WindUI:Notify({Title="Error", Content=selectedName.." is not a ScreenGui"})
-            return
-        end
-        gui.Enabled = not gui.Enabled
-        WindUI:Notify({Title="Toggled", Content=selectedName.." => "..tostring(gui.Enabled)})
-    end
-})
-
-Section:Button({
-    Title = "Force Enable",
-    Callback = function()
-        local gui = getGui(selectedName)
-        if gui and gui:IsA("ScreenGui") then
-            gui.Enabled = true
-            WindUI:Notify({Title="Force Enable", Content=selectedName.." => true"})
-        else
-            WindUI:Notify({Title="Error", Content="Not a ScreenGui"})
+local function findMainTextBox()
+    -- prefer TextBox paling panjang (biasanya command bar)
+    local best, bestLen = nil, 0
+    for _, v in ipairs(cmdrGui:GetDescendants()) do
+        if v:IsA("TextBox") then
+            local len = (v.AbsoluteSize.X or 0)
+            if v.Visible and v.Active and len > bestLen then
+                best = v
+                bestLen = len
+            end
         end
     end
-})
+    return best
+end
 
-Section:Button({
-    Title = "Force Disable",
-    Callback = function()
-        local gui = getGui(selectedName)
-        if gui and gui:IsA("ScreenGui") then
-            gui.Enabled = false
-            WindUI:Notify({Title="Force Disable", Content=selectedName.." => false"})
-        else
-            WindUI:Notify({Title="Error", Content="Not a ScreenGui"})
-        end
+local textBox
+local keepFocusConn
+
+local function forceFocus()
+    textBox = textBox or findMainTextBox()
+    if not textBox then
+        warn("[CmdrToggle] TextBox not found")
+        return
     end
-})
 
-Section:Button({
-    Title = "Refresh (Print List)",
-    Callback = function()
-        local newList = getScreenGuiNames()
-        print("=== PlayerGui ScreenGuis ===")
-        for _, name in ipairs(newList) do
-            local gui = getGui(name)
-            print(name, "Enabled=", gui and gui.Enabled)
-        end
-        WindUI:Notify({Title="Refresh", Content="Printed "..#newList.." ScreenGuis in console"})
+    textBox.ClearTextOnFocus = false
+    textBox.TextEditable = true
+    textBox.Active = true
+
+    task.wait(0.05)
+    pcall(function()
+        textBox:CaptureFocus()
+    end)
+
+    -- kalau fokus hilang karena klik luar, ambil lagi biar Cmdr gak auto close
+    if not keepFocusConn then
+        keepFocusConn = textBox.FocusLost:Connect(function()
+            task.wait(0.05)
+            if cmdrGui.Enabled then
+                pcall(function()
+                    textBox:CaptureFocus()
+                end)
+            end
+        end)
     end
-})
+end
 
-WindUI:Notify({Title="PlayerGui Explorer", Content="Loaded. Select GUI then use Toggle/Force buttons."})
+--========================
+-- Open / Close
+--========================
+local function openCmdr()
+    cmdrGui.Enabled = true
+    enableTypingBlock()
+    forceFocus()
+    print("[CmdrToggle] OPEN")
+end
+
+local function closeCmdr()
+    cmdrGui.Enabled = false
+    disableTypingBlock()
+
+    if textBox then
+        pcall(function()
+            textBox:ReleaseFocus()
+        end)
+    end
+
+    print("[CmdrToggle] CLOSE")
+end
+
+local function toggleCmdr()
+    if cmdrGui.Enabled then
+        closeCmdr()
+    else
+        openCmdr()
+    end
+end
+
+--========================
+-- Hotkey ;
+--========================
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Semicolon then
+        toggleCmdr()
+    end
+end)
+
+print("[CmdrToggle] Loaded. Press ';' to toggle Cmdr.")
