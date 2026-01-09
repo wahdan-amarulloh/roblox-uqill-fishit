@@ -3,19 +3,23 @@ local UIS = game:GetService("UserInputService")
 local CAS = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local cmdrGui = playerGui:WaitForChild("Cmdr")
+local cmdr = player:WaitForChild("PlayerGui"):WaitForChild("Cmdr")
 
-cmdrGui.DisplayOrder = 999999
+cmdr.DisplayOrder = 999999
+
+-- Grab references based on your real path
+local mainFrame = cmdr:WaitForChild("Frame")
+local autoFrame = cmdr:FindFirstChild("Autocomplete") -- optional
+local entry = mainFrame:WaitForChild("Entry") -- this is the key
 
 --========================
--- Movement block
+-- Movement Block (backup)
 --========================
 local function sink()
     return Enum.ContextActionResult.Sink
 end
 
-local function enableTypingBlock()
+local function enableBlock()
     CAS:BindAction("CmdrBlockW", sink, false, Enum.KeyCode.W)
     CAS:BindAction("CmdrBlockA", sink, false, Enum.KeyCode.A)
     CAS:BindAction("CmdrBlockS", sink, false, Enum.KeyCode.S)
@@ -23,7 +27,7 @@ local function enableTypingBlock()
     CAS:BindAction("CmdrBlockSpace", sink, false, Enum.KeyCode.Space)
 end
 
-local function disableTypingBlock()
+local function disableBlock()
     CAS:UnbindAction("CmdrBlockW")
     CAS:UnbindAction("CmdrBlockA")
     CAS:UnbindAction("CmdrBlockS")
@@ -32,80 +36,49 @@ local function disableTypingBlock()
 end
 
 --========================
--- Find input TextBox
+-- Toggle logic
 --========================
-local function findMainTextBox()
-    -- prefer TextBox paling panjang (biasanya command bar)
-    local best, bestLen = nil, 0
-    for _, v in ipairs(cmdrGui:GetDescendants()) do
-        if v:IsA("TextBox") then
-            local len = (v.AbsoluteSize.X or 0)
-            if v.Visible and v.Active and len > bestLen then
-                best = v
-                bestLen = len
-            end
-        end
-    end
-    return best
-end
+local isOpen = false
 
-local textBox
-local keepFocusConn
+local function openCmdr()
+    cmdr.Enabled = true
+    mainFrame.Visible = true
+    if autoFrame then autoFrame.Visible = true end
 
-local function forceFocus()
-    textBox = textBox or findMainTextBox()
-    if not textBox then
-        warn("[CmdrToggle] TextBox not found")
-        return
-    end
+    -- make Entry capture keyboard
+    entry.Visible = true
+    entry.Active = true
+    entry.TextEditable = true
+    entry.ClearTextOnFocus = false
+    entry.Modal = true  -- IMPORTANT: steal input from game
 
-    textBox.ClearTextOnFocus = false
-    textBox.TextEditable = true
-    textBox.Active = true
+    enableBlock()
 
     task.wait(0.05)
     pcall(function()
-        textBox:CaptureFocus()
+        entry:CaptureFocus()
     end)
 
-    -- kalau fokus hilang karena klik luar, ambil lagi biar Cmdr gak auto close
-    if not keepFocusConn then
-        keepFocusConn = textBox.FocusLost:Connect(function()
-            task.wait(0.05)
-            if cmdrGui.Enabled then
-                pcall(function()
-                    textBox:CaptureFocus()
-                end)
-            end
-        end)
-    end
-end
-
---========================
--- Open / Close
---========================
-local function openCmdr()
-    cmdrGui.Enabled = true
-    enableTypingBlock()
-    forceFocus()
-    print("[CmdrToggle] OPEN")
+    isOpen = true
+    print("[Cmdr] OPEN")
 end
 
 local function closeCmdr()
-    cmdrGui.Enabled = false
-    disableTypingBlock()
+    -- release input
+    entry.Modal = false
+    pcall(function()
+        entry:ReleaseFocus()
+    end)
 
-    if textBox then
-        pcall(function()
-            textBox:ReleaseFocus()
-        end)
-    end
+    cmdr.Enabled = false
+    disableBlock()
 
-    print("[CmdrToggle] CLOSE")
+    isOpen = false
+    print("[Cmdr] CLOSE")
 end
 
 local function toggleCmdr()
-    if cmdrGui.Enabled then
+    if isOpen then
         closeCmdr()
     else
         openCmdr()
@@ -113,13 +86,18 @@ local function toggleCmdr()
 end
 
 --========================
--- Hotkey ;
+-- Hotkeys
 --========================
-UIS.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Semicolon then
+UIS.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.P then
         toggleCmdr()
+    elseif input.KeyCode == Enum.KeyCode.RightShift then
+        -- emergency unfreeze
+        entry.Modal = false
+        disableBlock()
+        isOpen = false
+        print("[Cmdr] EMERGENCY UNFREEZE")
     end
 end)
 
-print("[CmdrToggle] Loaded. Press ';' to toggle Cmdr.")
+print("[Cmdr] Loaded. Press ';' to toggle. RightShift = emergency unfreeze.")
