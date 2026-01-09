@@ -1,4 +1,3 @@
---// WindUI Loader
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Players = game:GetService("Players")
@@ -8,27 +7,19 @@ local playerGui = player:WaitForChild("PlayerGui")
 --========================
 -- Helpers
 --========================
-local function getPlayerGuiEntries()
-    local list = {}
+local function getScreenGuiNames()
+    local names = {}
     for _, obj in ipairs(playerGui:GetChildren()) do
         if obj:IsA("ScreenGui") then
-            table.insert(list, obj.Name)
+            table.insert(names, obj.Name)
         end
     end
-    table.sort(list)
-    return list
+    table.sort(names)
+    return names
 end
 
-local function getGuiByName(name)
+local function getGui(name)
     return playerGui:FindFirstChild(name)
-end
-
-local function getStatusText(gui)
-    if not gui then return "N/A" end
-    if gui:IsA("ScreenGui") then
-        return gui.Enabled and "Enabled ✅" or "Disabled ❌"
-    end
-    return "Not ScreenGui"
 end
 
 --========================
@@ -39,105 +30,83 @@ local Window = WindUI:CreateWindow({
     Icon = "layout-dashboard",
     Author = "Wahdan Tools",
     Folder = "GuiExplorer",
-    Size = UDim2.fromOffset(520, 420),
+    Size = UDim2.fromOffset(560, 420),
 })
 
 local Tab = Window:Tab({ Title = "Explorer", Icon = "search" })
 local Section = Tab:Section({ Title = "PlayerGui ScreenGuis" })
 
-local guiList = getPlayerGuiEntries()
-local selectedGuiName = guiList[1] or ""
-local statusLabel
+local guiNames = getScreenGuiNames()
+local selectedName = guiNames[1] or ""
 
--- Dropdown to select GUI
-local dropdown = Section:Dropdown({
+Section:Dropdown({
     Title = "Select ScreenGui",
-    Values = guiList,
-    Value = selectedGuiName,
+    Values = guiNames,
+    Value = selectedName,
     Callback = function(v)
-        selectedGuiName = v
-        local gui = getGuiByName(selectedGuiName)
-        if statusLabel then
-            statusLabel:Set("Status: " .. getStatusText(gui))
-        end
+        selectedName = v
+        local gui = getGui(selectedName)
+        WindUI:Notify({
+            Title = "Selected",
+            Content = selectedName .. " | Enabled = " .. tostring(gui and gui.Enabled)
+        })
     end
 })
 
--- Status label
-statusLabel = Section:Label({
-    Title = "Status: " .. getStatusText(getGuiByName(selectedGuiName))
-})
-
--- Toggle button
 Section:Button({
-    Title = "Toggle Enabled (Show/Hide)",
+    Title = "Toggle Enabled (On/Off)",
     Callback = function()
-        local gui = getGuiByName(selectedGuiName)
+        local gui = getGui(selectedName)
         if not gui then
-            WindUI:Notify({Title="PlayerGui Explorer", Content="GUI not found: "..tostring(selectedGuiName)})
+            WindUI:Notify({Title="Error", Content="GUI not found: "..tostring(selectedName)})
             return
         end
-
-        if gui:IsA("ScreenGui") then
-            gui.Enabled = not gui.Enabled
-            if statusLabel then
-                statusLabel:Set("Status: " .. getStatusText(gui))
-            end
-            WindUI:Notify({Title="PlayerGui Explorer", Content=("Toggled '%s' => %s"):format(gui.Name, gui.Enabled and "Enabled" or "Disabled")})
-        else
-            WindUI:Notify({Title="PlayerGui Explorer", Content=("'%s' is not a ScreenGui"):format(gui.Name)})
+        if not gui:IsA("ScreenGui") then
+            WindUI:Notify({Title="Error", Content=selectedName.." is not a ScreenGui"})
+            return
         end
+        gui.Enabled = not gui.Enabled
+        WindUI:Notify({Title="Toggled", Content=selectedName.." => "..tostring(gui.Enabled)})
     end
 })
 
--- Force enable button (helpful if scripts keep disabling)
 Section:Button({
     Title = "Force Enable",
     Callback = function()
-        local gui = getGuiByName(selectedGuiName)
+        local gui = getGui(selectedName)
         if gui and gui:IsA("ScreenGui") then
             gui.Enabled = true
-            statusLabel:Set("Status: " .. getStatusText(gui))
-            WindUI:Notify({Title="PlayerGui Explorer", Content=("Force Enabled '%s'"):format(gui.Name)})
+            WindUI:Notify({Title="Force Enable", Content=selectedName.." => true"})
+        else
+            WindUI:Notify({Title="Error", Content="Not a ScreenGui"})
         end
     end
 })
 
--- Force disable button
 Section:Button({
     Title = "Force Disable",
     Callback = function()
-        local gui = getGuiByName(selectedGuiName)
+        local gui = getGui(selectedName)
         if gui and gui:IsA("ScreenGui") then
             gui.Enabled = false
-            statusLabel:Set("Status: " .. getStatusText(gui))
-            WindUI:Notify({Title="PlayerGui Explorer", Content=("Force Disabled '%s'"):format(gui.Name)})
+            WindUI:Notify({Title="Force Disable", Content=selectedName.." => false"})
+        else
+            WindUI:Notify({Title="Error", Content="Not a ScreenGui"})
         end
     end
 })
 
-Section:Divider()
-
--- Refresh list button
 Section:Button({
-    Title = "Refresh List",
+    Title = "Refresh (Print List)",
     Callback = function()
-        guiList = getPlayerGuiEntries()
-
-        -- update dropdown values
-        dropdown:SetValues(guiList)
-
-        -- keep selected if still exists
-        if not table.find(guiList, selectedGuiName) then
-            selectedGuiName = guiList[1] or ""
-            dropdown:Set(selectedGuiName)
+        local newList = getScreenGuiNames()
+        print("=== PlayerGui ScreenGuis ===")
+        for _, name in ipairs(newList) do
+            local gui = getGui(name)
+            print(name, "Enabled=", gui and gui.Enabled)
         end
-
-        local gui = getGuiByName(selectedGuiName)
-        statusLabel:Set("Status: " .. getStatusText(gui))
-
-        WindUI:Notify({Title="PlayerGui Explorer", Content="Refreshed ScreenGui list ("..#guiList..")"})
+        WindUI:Notify({Title="Refresh", Content="Printed "..#newList.." ScreenGuis in console"})
     end
 })
 
-WindUI:Notify({Title="PlayerGui Explorer", Content="Loaded. Select any ScreenGui and toggle it."})
+WindUI:Notify({Title="PlayerGui Explorer", Content="Loaded. Select GUI then use Toggle/Force buttons."})
